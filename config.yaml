@@ -1,0 +1,72 @@
+# ── Job Scout configuration ──────────────────────────────────────────
+# Postings older than this many days are ignored entirely.
+max_age_days: 7
+
+# Minimum LLM fit score (0-10) to make the digest.
+score_threshold: 7
+
+# Keyword prefilter: a posting must match at least one to be sent to the
+# LLM scorer. Keeps API cost near zero. Case-insensitive, matched against
+# title + department.
+prefilter_keywords:
+  - "ai"
+  - "applied"
+  - "agent"
+  - "llm"
+  - "machine learning"
+  - "automation"
+  - "forward deployed"
+  - "solutions engineer"
+  - "value creation"
+  - "portfolio operations"
+  - "data"
+  - "platform"
+
+# Hard location filter applied BEFORE scoring. A posting passes if any of
+# these substrings appear in its location field. Keep loose on purpose —
+# the LLM scorer handles nuance.
+locations:
+  - "chicago"
+  - "new york"
+  - "remote"
+  - "united states"
+  - "usa"
+
+# ── Watchlist ─────────────────────────────────────────────────────────
+# The core of the system. Each entry is a company + its ATS.
+# Tokens are the slug in the company's careers URL:
+#   Greenhouse: boards.greenhouse.io/<token>
+#   Lever:      jobs.lever.co/<token>
+#   Ashby:      jobs.ashbyhq.com/<token>
+# Run `python discover.py <company-name>` to probe for a token.
+# All tokens below validated via discover.py on 2026-08-19.
+# (Palantir dropped: no public Greenhouse/Lever/Ashby board — its bespoke
+# careers portal would need a custom scraper. See README "Extending".)
+
+watchlist:
+  greenhouse:
+    - anthropic          # applied AI / forward deployed
+    - scaleai
+    - vercel
+    - datadog
+  lever: []              # nothing on Lever today; fetcher stays for future adds
+  ashby:
+    - openai
+    - cursor             # anysphere
+    - linear
+    - notion
+    - perplexity
+    - sierra
+    - decagon
+    - harvey
+    - cohere
+    - plaid
+    - ramp
+
+# HN "Who is Hiring" — searched via the public Algolia API. No tokens needed.
+hn_who_is_hiring: true
+hn_keywords:
+  - "forward deployed"
+  - "applied ai"
+  - "ai engineer"
+  - "agents"
