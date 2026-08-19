@@ -1,10 +1,10 @@
 # job-scout
 
-Agentic job-opportunity screener. Every morning a scheduled Cursor Automation
+Agentic job-opportunity screener. Every morning a scheduled Claude routine
 pulls fresh postings (< 7 days old) straight from company ATS endpoints — the
 source underneath career pages, hours-to-days before postings hit aggregators —
-scores each against a personal fit profile with Claude, and ends its run with a
-ranked digest. No hits, no noise.
+scores each against a personal fit profile, and posts a ranked digest to
+Slack. No hits, no noise.
 
 ## How it works
 
@@ -18,21 +18,22 @@ ATS fetchers (Greenhouse / Lever / Ashby public JSON) + HN Who's Hiring
 freshness (<7d) → keyword prefilter → location filter → seen.json dedupe
         │
         ▼
-Scorer (rubric = profile.md): the automation agent itself on Cursor models,
-or Claude Haiku for local runs
+Scorer (rubric = profile.md): the routine's Claude agent scores candidates
+itself; local runs can use Haiku via the Anthropic API
         │
         ▼
-digest.md → automation run summary · seen.json committed back to the repo
+digest.md → Slack (#job-scout) · seen.json committed back to the repo
 ```
 
-Cost: prefiltering keeps scored postings to a few dozen per run. In the
-automation, scoring is done by the agent itself — no API keys, covered by
-your Cursor subscription. Local runs use Haiku at fractions of a cent.
+Cost: prefiltering keeps scored postings to a few dozen per run. The routine
+draws from a normal Claude subscription (Pro allows 5 routine runs/day; this
+uses 1). Local scoring with Haiku is fractions of a cent.
 
 ## Setup (one time, ~10 minutes)
 
-1. The repo lives on Cursor origin (private). Clone it elsewhere with
-   `origin repo clone <org>/job-scout`.
+1. The repo lives on GitHub (private — routines require GitHub) with a copy
+   on Cursor origin. Clone: `gh repo clone rarejae/job-scout` or
+   `origin repo clone rarejae/job-scout`.
 2. Local environment:
    ```
    python3 -m venv .venv
@@ -50,19 +51,61 @@ your Cursor subscription. Local runs use Haiku at fractions of a cent.
    ```
    To test scoring locally too, get a key from console.anthropic.com and run
    `ANTHROPIC_API_KEY=sk-... .venv/bin/python -m scout.main`.
-5. The scheduled Cursor Automation (every day, 8:00 AM Central) checks out
-   this repo, runs the scout in `--no-score` mode, scores the candidates
-   itself against `profile.md`, runs `--mark-seen`, commits `seen.json` back,
-   and finishes with the digest in its run summary. No API keys to manage.
-6. Optional: give the automation a Slack action so it DMs you the digest
-   instead of just logging it.
+5. One-time: connect Slack at claude.ai → Settings → Connectors (a free
+   personal workspace with a `#job-scout` channel keeps this separate from
+   work).
+6. Create the routine at claude.ai/code/routines → New routine → Cloud:
+   - Repo: `rarejae/job-scout`
+   - Schedule: daily, 8:00 AM Central
+   - Connector: Slack
+   - Prompt: "Run the daily job-scout pipeline exactly as documented in the
+     Runbook section of README.md, then post the digest (or a one-line 'no
+     hits today') to the #job-scout Slack channel."
+
+   Requires Claude Code on the web enabled; Pro includes 5 routine runs/day.
+
+## Runbook (what the routine executes)
+
+1. `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
+2. `.venv/bin/python -m scout.main --no-score` — fetches and filters, writes
+   `candidates.json`. If it reports 0 candidates, post "no candidates today"
+   to Slack and stop (commit nothing).
+3. Read `profile.md` (the rubric) and `candidates.json`. Score each candidate
+   0-10, applying the rubric literally and stingily: 7+ means the candidate
+   should actually spend time applying. Penalize billable-hours consulting
+   hard; "AI" in a posting is not enough unless building/operationalizing AI
+   is the sanctioned core of the job.
+4. Write `digest.md` with only candidates scoring >= `score_threshold` in
+   `config.yaml`, sorted by score descending, in the digest format below.
+5. `.venv/bin/python -m scout.main --mark-seen` — folds today's candidates
+   into `seen.json` so they're never re-scored.
+6. Commit and push `seen.json` to `main` ("scout: update seen state").
+7. Post the full `digest.md` to `#job-scout` on Slack (or "no hits this run"
+   if nothing cleared the threshold).
+
+Digest format:
+
+```markdown
+# Job Scout — <YYYY-MM-DD>
+
+<N> match(es) above threshold.
+
+### <score>/10 — <title> @ <company>
+<location or "location unlisted"> · posted <N>d ago · ⚠️ <flags, if any>
+> <one-liner, 15 words max>
+
+[Posting](<url>)
+```
+
+Never edit `config.yaml` or `profile.md`. On any failure, post the error to
+Slack and commit nothing.
 
 ## Tuning
 
 - **Too noisy** → raise `score_threshold` to 8, tighten `prefilter_keywords`.
 - **Too quiet** → drop threshold to 6, loosen keywords, grow the watchlist.
-- **Scores feel shallow** → pick a stronger model on the automation, or bump
-  `MODEL` in `scout/score.py` to a Sonnet model for local runs.
+- **Scores feel shallow** → the routine uses your plan's Claude model; for
+  local runs, bump `MODEL` in `scout/score.py` to a Sonnet model.
 - **Profile drift** → `profile.md` is the rubric. When your filters change
   (e.g., a PE process teaches you something new about what you want), edit it —
   the whole system re-aims instantly.
