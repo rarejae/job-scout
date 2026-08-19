@@ -1,6 +1,6 @@
 # job-scout
 
-Agentic job-opportunity screener. Twice a week a scheduled Cursor Automation
+Agentic job-opportunity screener. Every morning a scheduled Cursor Automation
 pulls fresh postings (< 7 days old) straight from company ATS endpoints — the
 source underneath career pages, hours-to-days before postings hit aggregators —
 scores each against a personal fit profile with Claude, and ends its run with a
@@ -45,7 +45,7 @@ fractions of a cent per run.
    ```
    ANTHROPIC_API_KEY=sk-... .venv/bin/python -m scout.main
    ```
-5. The scheduled Cursor Automation (Mon & Thu, 8:00 AM Central) checks out
+5. The scheduled Cursor Automation (every day, 8:00 AM Central) checks out
    this repo, runs the scout with `ANTHROPIC_API_KEY` from its cloud
    environment, commits `seen.json` back, and finishes with the digest in its
    run summary. Add the key in the automation's environment settings.
