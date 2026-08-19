@@ -18,14 +18,16 @@ ATS fetchers (Greenhouse / Lever / Ashby public JSON) + HN Who's Hiring
 freshness (<7d) → keyword prefilter → location filter → seen.json dedupe
         │
         ▼
-Claude scorer (haiku, strict JSON, rubric = profile.md)
+Scorer (rubric = profile.md): the automation agent itself on Cursor models,
+or Claude Haiku for local runs
         │
         ▼
 digest.md → automation run summary · seen.json committed back to the repo
 ```
 
-Cost: prefiltering keeps scored postings to a few dozen per run on Haiku —
-fractions of a cent per run.
+Cost: prefiltering keeps scored postings to a few dozen per run. In the
+automation, scoring is done by the agent itself — no API keys, covered by
+your Cursor subscription. Local runs use Haiku at fractions of a cent.
 
 ## Setup (one time, ~10 minutes)
 
@@ -41,14 +43,17 @@ fractions of a cent per run.
    .venv/bin/python discover.py anthropic ramp sierra
    ```
    Fix any tokens in `config.yaml` that come back ✗.
-4. Test a full run (key from console.anthropic.com):
+4. Test the pipeline (no key needed — stops after filtering and writes
+   `candidates.json`):
    ```
-   ANTHROPIC_API_KEY=sk-... .venv/bin/python -m scout.main
+   .venv/bin/python -m scout.main --no-score
    ```
+   To test scoring locally too, get a key from console.anthropic.com and run
+   `ANTHROPIC_API_KEY=sk-... .venv/bin/python -m scout.main`.
 5. The scheduled Cursor Automation (every day, 8:00 AM Central) checks out
-   this repo, runs the scout with `ANTHROPIC_API_KEY` from its cloud
-   environment, commits `seen.json` back, and finishes with the digest in its
-   run summary. Add the key in the automation's environment settings.
+   this repo, runs the scout in `--no-score` mode, scores the candidates
+   itself against `profile.md`, runs `--mark-seen`, commits `seen.json` back,
+   and finishes with the digest in its run summary. No API keys to manage.
 6. Optional: give the automation a Slack action so it DMs you the digest
    instead of just logging it.
 
@@ -56,7 +61,8 @@ fractions of a cent per run.
 
 - **Too noisy** → raise `score_threshold` to 8, tighten `prefilter_keywords`.
 - **Too quiet** → drop threshold to 6, loosen keywords, grow the watchlist.
-- **Scores feel shallow** → bump `MODEL` in `scout/score.py` to a Sonnet model.
+- **Scores feel shallow** → pick a stronger model on the automation, or bump
+  `MODEL` in `scout/score.py` to a Sonnet model for local runs.
 - **Profile drift** → `profile.md` is the rubric. When your filters change
   (e.g., a PE process teaches you something new about what you want), edit it —
   the whole system re-aims instantly.

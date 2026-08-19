@@ -1,6 +1,11 @@
-"""Orchestrator. Run: python -m scout.main
+"""Orchestrator. Run: python -m scout.main [--no-score | --mark-seen]
 Fetch watchlist -> freshness/keyword/location filters -> dedupe against
-seen.json -> Claude scoring -> write digest.md (consumed by the GH Action).
+seen.json -> scoring -> write digest.md.
+
+Default mode scores with Claude (needs ANTHROPIC_API_KEY). --no-score stops
+after the filters and writes candidates.json so an automation agent can do
+the scoring itself; --mark-seen folds those candidate ids into seen.json
+once scoring has succeeded.
 """
 from __future__ import annotations
 
@@ -13,11 +18,11 @@ import sys
 import yaml
 
 from . import fetchers
-from .score import get_client, score_posting
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SEEN_PATH = ROOT / "seen.json"
 DIGEST_PATH = ROOT / "digest.md"
+CANDIDATES_PATH = ROOT / "candidates.json"
 
 
 def load_seen() -> set[str]:
@@ -48,9 +53,24 @@ def passes_prefilter(job: dict, cfg: dict, kw_patterns: list[re.Pattern[str]]) -
     return True
 
 
+def mark_seen() -> None:
+    if not CANDIDATES_PATH.exists():
+        print("no candidates.json — nothing to mark")
+        return
+    seen = load_seen()
+    ids = {j["id"] for j in json.loads(CANDIDATES_PATH.read_text())}
+    save_seen(seen | ids)
+    CANDIDATES_PATH.unlink()
+    print(f"marked {len(ids)} candidate ids as seen")
+
+
 def main() -> None:
+    if "--mark-seen" in sys.argv:
+        mark_seen()
+        return
+    no_score = "--no-score" in sys.argv
+
     cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
-    profile = (ROOT / "profile.md").read_text()
     seen = load_seen()
 
     raw: list[dict] = []
@@ -84,6 +104,15 @@ def main() -> None:
             run_ids.add(j["id"])
     print(f"fetched={len(raw)} candidates_after_filters={len(fresh)}")
 
+    if no_score:
+        CANDIDATES_PATH.write_text(json.dumps(fresh, indent=2))
+        print(f"{len(fresh)} candidates written to candidates.json "
+              f"(seen.json untouched until --mark-seen)")
+        return
+
+    from .score import get_client, score_posting  # lazy: --no-score needs no anthropic package
+
+    profile = (ROOT / "profile.md").read_text()
     client = get_client()
     hits = []
     for job in fresh:
