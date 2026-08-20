@@ -3,7 +3,7 @@
 max_age_days: 7
 
 # Minimum LLM fit score (0-10) to make the digest.
-score_threshold: 7
+score_threshold: 6
 
 # Keyword prefilter: a posting must match at least one to be sent to the
 # LLM scorer. Keeps API cost near zero. Case-insensitive, matched against
@@ -31,6 +31,9 @@ prefilter_keywords:
   - "special projects"
   - "corporate development"
   - "enablement"
+  - "growth strategy"
+  - "ai strategy"
+  - "ai consulting"
 
 # Hard location filter applied BEFORE scoring. A posting passes if any of
 # these substrings appear in its location field. Keep loose on purpose —

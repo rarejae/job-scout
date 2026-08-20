@@ -96,10 +96,11 @@ uses 1). Local scoring with Haiku is fractions of a cent.
    - If sources are healthy and it reports 0 candidates, post "no candidates
      today" to Slack and stop (commit nothing).
 3. Read `profile.md` (the rubric) and `candidates.json`. Score each candidate
-   0-10, applying the rubric literally and stingily: 7+ means the candidate
-   should actually spend time applying. Penalize billable-hours consulting
-   hard; "AI" in a posting is not enough unless building/operationalizing AI
-   is the sanctioned core of the job.
+   0-10, applying the rubric literally. Cast a wide net: 6+ is worth a look;
+   8+ means apply this week. Building is a plus, not a gate — AI strategy
+   and growth strategy score HIGH even without a build mandate. Do not
+   auto-kill consulting; AI-adjacent work at a firm he'd learn from can
+   score MID or HIGH.
 4. Write `digest.md` with only candidates scoring >= `score_threshold` in
    `config.yaml`, sorted by score descending, in the digest format below.
    If there are hits, also copy it to `digests/<YYYY-MM-DD>.md` (a committed
@@ -134,8 +135,8 @@ reported to Slack after retrying once.
 
 ## Tuning
 
-- **Too noisy** → raise `score_threshold` to 8, tighten `prefilter_keywords`.
-- **Too quiet** → drop threshold to 6, loosen keywords, grow the watchlist.
+- **Too noisy** → raise `score_threshold` to 7 or 8, tighten `prefilter_keywords`.
+- **Too quiet** → drop threshold to 5, loosen keywords, grow the watchlist.
 - **Scores feel shallow** → the routine uses your plan's Claude model; for
   local runs, bump `MODEL` in `scout/score.py` to a Sonnet model.
 - **Profile drift** → `profile.md` is the rubric. When your filters change
