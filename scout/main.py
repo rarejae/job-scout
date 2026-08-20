@@ -1,5 +1,5 @@
 """Orchestrator. Run: python -m scout.main [--no-score | --mark-seen]
-Fetch watchlist -> freshness/keyword/location filters -> dedupe against
+Fetch watchlist -> freshness/keyword filters -> dedupe against
 seen.json -> scoring -> write digest.md.
 
 Default mode scores with Claude (needs ANTHROPIC_API_KEY). --no-score stops
@@ -58,9 +58,11 @@ def passes_prefilter(job: dict, cfg: dict, kw_patterns: list[re.Pattern[str]]) -
         hay = f"{job['title']} {job['department']}".lower()
         if not any(p.search(hay) for p in kw_patterns):
             return False
-    loc = job["location"].lower()
-    if loc and not any(l in loc for l in cfg["locations"]):
-        return False
+    loc_needles = [l.lower() for l in (cfg.get("locations") or [])]
+    if loc_needles:
+        loc = job["location"].lower()
+        if loc and not any(l in loc for l in loc_needles):
+            return False
     return True
 
 

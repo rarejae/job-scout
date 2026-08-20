@@ -15,7 +15,7 @@ config.yaml watchlist
 ATS fetchers (Greenhouse / Lever / Ashby public JSON) + HN Who's Hiring
         │
         ▼
-freshness (<7d) → keyword prefilter → location filter → seen.json dedupe
+freshness (<7d) → keyword prefilter → seen.json dedupe
         │
         ▼
 Scorer (rubric = profile.md): the routine's Claude agent scores candidates

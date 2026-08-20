@@ -35,16 +35,9 @@ prefilter_keywords:
   - "ai strategy"
   - "ai consulting"
 
-# Hard location filter applied BEFORE scoring. A posting passes if any of
-# these substrings appear in its location field. Keep loose on purpose —
-# the LLM scorer handles nuance.
-locations:
-  - "chicago"
-  - "new york"
-  - "nyc"
-  - "remote"
-  - "united states"
-  - "usa"
+# Hard location filter applied BEFORE scoring. Empty = do not drop on
+# location; the scorer flags it instead. He is open to relocate.
+locations: []
 
 # ── Watchlist ─────────────────────────────────────────────────────────
 # The core of the system. Each entry is a company + its ATS.
