@@ -67,11 +67,24 @@ uses 1). Local scoring with Haiku is fractions of a cent.
 
    Requires Claude Code on the web enabled; Pro includes 5 routine runs/day.
 
-   ⚠️ The routine's sandbox must allow outbound network to:
-   `boards-api.greenhouse.io`, `api.lever.co`, `api.ashbyhq.com`,
-   `hn.algolia.com`, plus PyPI for the venv install. If everything is
-   blocked, the run fails loudly (`sources_ok=0` exits nonzero) rather than
-   posting a false "no candidates today".
+   ⚠️ Network access: the Default environment is **Trusted**, which only
+   allows package registries — job-board APIs get `403 Forbidden` on CONNECT.
+   In the routine editor, click the cloud-environment icon below Instructions,
+   open the environment settings, set **Network access** to **Custom**, keep
+   **Also include default list of common package managers** checked (needed
+   for pip), and add these allowed domains (one per line):
+
+   ```
+   boards-api.greenhouse.io
+   api.ashbyhq.com
+   api.lever.co
+   hn.algolia.com
+   ```
+
+   Prefer a dedicated environment named `job-scout` over widening Default,
+   so other Claude Code cloud sessions stay on Trusted. Save, then Run now.
+   If everything is still blocked, the run fails loudly (`sources_ok=0`
+   exits nonzero) rather than posting a false "no candidates today".
 
 ## Runbook (what the routine executes)
 
