@@ -21,6 +21,16 @@ prefilter_keywords:
   - "portfolio operations"
   - "data"
   - "platform"
+  - "strategy"
+  - "bizops"
+  - "business operations"
+  - "chief of staff"
+  - "gtm"
+  - "revops"
+  - "product operations"
+  - "special projects"
+  - "corporate development"
+  - "enablement"
 
 # Hard location filter applied BEFORE scoring. A posting passes if any of
 # these substrings appear in its location field. Keep loose on purpose —
@@ -28,6 +38,7 @@ prefilter_keywords:
 locations:
   - "chicago"
   - "new york"
+  - "nyc"
   - "remote"
   - "united states"
   - "usa"
@@ -39,9 +50,8 @@ locations:
 #   Lever:      jobs.lever.co/<token>
 #   Ashby:      jobs.ashbyhq.com/<token>
 # Run `python discover.py <company-name>` to probe for a token.
-# All tokens below validated via discover.py on 2026-08-19.
-# (Palantir dropped: no public Greenhouse/Lever/Ashby board — its bespoke
-# careers portal would need a custom scraper. See README "Extending".)
+# Tokens below validated via discover.py (2026-08-19 + 2026-08-20).
+# 0-posting / dead tokens omitted. Palantir has no public G/L/A board.
 
 watchlist:
   greenhouse:
@@ -49,6 +59,23 @@ watchlist:
     - scaleai
     - vercel
     - datadog
+    - stripe             # solutions / ops / applied
+    - databricks
+    - togetherai
+    - figma
+    - airtable
+    - cloudflare
+    - mongodb
+    - elastic
+    - brex
+    - mercury
+    - block
+    - carta              # PE-adjacent ops
+    - gusto
+    - a16z               # VC platform / ops
+    - generalcatalyst
+    - relativity         # Chicago
+    - sproutsocial       # Chicago
   lever: []              # nothing on Lever today; fetcher stays for future adds
   ashby:
     - openai
@@ -62,6 +89,17 @@ watchlist:
     - cohere
     - plaid
     - ramp
+    - snowflake
+    - langchain
+    - replit
+    - cognition          # Devin / agents
+    - temporal
+    - 1password
+    - pinecone
+    - langfuse
+    - sequoia            # VC
+    - poolside
+    - g2                 # Chicago
 
 # HN "Who is Hiring" — searched via the public Algolia API. No tokens needed.
 hn_who_is_hiring: true
