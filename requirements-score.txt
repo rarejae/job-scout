@@ -1,0 +1,3 @@
+# Only needed for local scoring (scout.main without --no-score).
+# The daily routine scores candidates itself and never imports this.
+anthropic==0.124.0

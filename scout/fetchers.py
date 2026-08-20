@@ -86,16 +86,23 @@ def fetch_ashby(token: str) -> list[dict]:
 
 def fetch_hn_who_is_hiring(keywords: list[str], max_age_days: int) -> list[dict]:
     """Search comments in the latest 'Ask HN: Who is hiring?' thread via Algolia."""
+    # search_by_date sorts by recency, so a text query returns whatever recent
+    # story loosely matches. Filter by the official bot account and exact title
+    # prefix instead — this also skips the sibling "Who wants to be hired?"
+    # thread posted the same minute each month.
     r = requests.get(
         "https://hn.algolia.com/api/v1/search_by_date",
-        params={"query": "Ask HN: Who is hiring?", "tags": "story", "hitsPerPage": 1},
+        params={"tags": "story,author_whoishiring", "hitsPerPage": 10},
         headers=UA, timeout=TIMEOUT,
     )
     r.raise_for_status()
-    hits = r.json().get("hits", [])
-    if not hits:
-        return []
-    story_id = hits[0]["objectID"]
+    story_id = next(
+        (h["objectID"] for h in r.json().get("hits", [])
+         if (h.get("title") or "").startswith("Ask HN: Who is hiring?")),
+        None,
+    )
+    if story_id is None:
+        raise RuntimeError("no 'Ask HN: Who is hiring?' thread found")
 
     jobs = []
     for kw in keywords:

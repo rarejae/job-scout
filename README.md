@@ -22,7 +22,7 @@ Scorer (rubric = profile.md): the routine's Claude agent scores candidates
 itself; local runs can use Haiku via the Anthropic API
         │
         ▼
-digest.md → Slack (#job-scout) · seen.json committed back to the repo
+digest.md → Slack (#job-scout) · seen.json + digests/ committed back to the repo
 ```
 
 Cost: prefiltering keeps scored postings to a few dozen per run. The routine
@@ -39,6 +39,8 @@ uses 1). Local scoring with Haiku is fractions of a cent.
    python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt
    ```
+   (Add `-r requirements-score.txt` only if you'll score locally via the API —
+   the routine doesn't need it.)
 3. Validate/expand the watchlist (starter set last validated 2026-08-19):
    ```
    .venv/bin/python discover.py anthropic ramp sierra
@@ -49,7 +51,8 @@ uses 1). Local scoring with Haiku is fractions of a cent.
    ```
    .venv/bin/python -m scout.main --no-score
    ```
-   To test scoring locally too, get a key from console.anthropic.com and run
+   To test scoring locally too, install `requirements-score.txt`, get a key
+   from console.anthropic.com, and run
    `ANTHROPIC_API_KEY=sk-... .venv/bin/python -m scout.main`.
 5. One-time: connect Slack at claude.ai → Settings → Connectors (a free
    personal workspace with a `#job-scout` channel keeps this separate from
@@ -64,12 +67,21 @@ uses 1). Local scoring with Haiku is fractions of a cent.
 
    Requires Claude Code on the web enabled; Pro includes 5 routine runs/day.
 
+   ⚠️ The routine's sandbox must allow outbound network to:
+   `boards-api.greenhouse.io`, `api.lever.co`, `api.ashbyhq.com`,
+   `hn.algolia.com`, plus PyPI for the venv install. If everything is
+   blocked, the run fails loudly (`sources_ok=0` exits nonzero) rather than
+   posting a false "no candidates today".
+
 ## Runbook (what the routine executes)
 
 1. `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
 2. `.venv/bin/python -m scout.main --no-score` — fetches and filters, writes
-   `candidates.json`. If it reports 0 candidates, post "no candidates today"
-   to Slack and stop (commit nothing).
+   `candidates.json`. Read its summary line (`sources_ok=… sources_failed=…`):
+   - If it exits nonzero or most sources failed, that's an outage, not an
+     empty day — post the error output to Slack and stop (commit nothing).
+   - If sources are healthy and it reports 0 candidates, post "no candidates
+     today" to Slack and stop (commit nothing).
 3. Read `profile.md` (the rubric) and `candidates.json`. Score each candidate
    0-10, applying the rubric literally and stingily: 7+ means the candidate
    should actually spend time applying. Penalize billable-hours consulting
@@ -77,11 +89,17 @@ uses 1). Local scoring with Haiku is fractions of a cent.
    is the sanctioned core of the job.
 4. Write `digest.md` with only candidates scoring >= `score_threshold` in
    `config.yaml`, sorted by score descending, in the digest format below.
-5. `.venv/bin/python -m scout.main --mark-seen` — folds today's candidates
+   If there are hits, also copy it to `digests/<YYYY-MM-DD>.md` (a committed
+   archive — nothing is lost if delivery fails, and history helps tuning).
+5. Post the full `digest.md` to `#job-scout` on Slack (or "no hits this run"
+   if nothing cleared the threshold). Post BEFORE committing seen state:
+   if delivery fails, stop here so today's candidates resurface next run.
+6. `.venv/bin/python -m scout.main --mark-seen` — folds today's candidates
    into `seen.json` so they're never re-scored.
-6. Commit and push `seen.json` to `main` ("scout: update seen state").
-7. Post the full `digest.md` to `#job-scout` on Slack (or "no hits this run"
-   if nothing cleared the threshold).
+7. `git pull --rebase`, then commit `seen.json` (and `digests/` if written)
+   to `main` ("scout: update seen state") and push. If the rebase conflicts
+   on `seen.json`, resolve by unioning the entries of both versions (it's a
+   flat `{id: date}` object; on a duplicate id keep the earlier date).
 
 Digest format:
 
@@ -97,8 +115,9 @@ Digest format:
 [Posting](<url>)
 ```
 
-Never edit `config.yaml` or `profile.md`. On any failure, post the error to
-Slack and commit nothing.
+Never edit `config.yaml` or `profile.md`. On any failure before step 6, post
+the error to Slack and commit nothing; a failure in steps 6-7 should still be
+reported to Slack after retrying once.
 
 ## Tuning
 
