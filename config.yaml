@@ -76,6 +76,12 @@ watchlist:
     - generalcatalyst
     - relativity         # Chicago
     - sproutsocial       # Chicago
+    - gleanwork          # Glean — FDE / applied search
+    - xai
+    - bessemerventurepartners
+    - hextechnologies
+    - fivetran
+    - intercom
   lever: []              # nothing on Lever today; fetcher stays for future adds
   ashby:
     - openai
@@ -100,6 +106,15 @@ watchlist:
     - sequoia            # VC
     - poolside
     - g2                 # Chicago
+    - elevenlabs
+    - lumaai
+    - writer
+    - zapier
+    - n8n
+    - modal
+    - anyscale
+    - fireworks
+    - thinkingmachines
 
 # HN "Who is Hiring" — searched via the public Algolia API. No tokens needed.
 hn_who_is_hiring: true
