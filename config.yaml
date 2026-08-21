@@ -35,9 +35,52 @@ prefilter_keywords:
   - "ai strategy"
   - "ai consulting"
 
-# Hard location filter applied BEFORE scoring. Empty = do not drop on
-# location; the scorer flags it instead. He is open to relocate.
-locations: []
+# Hard location filter applied BEFORE scoring. A posting with a non-empty
+# location must match at least one substring (case-insensitive). Empty
+# location (HN / unlisted) still passes. This is USA-only — international
+# office clones of the same req were drowning the digest.
+locations:
+  - "united states"
+  - "usa"
+  - "u.s."
+  - "us-"
+  - "usca"
+  - "chicago"
+  - "new york"
+  - "nyc"
+  - "san francisco"
+  - "bay area"
+  - "menlo park"
+  - "palo alto"
+  - "mountain view"
+  - "redwood city"
+  - "seattle"
+  - "austin"
+  - "boston"
+  - "los angeles"
+  - "denver"
+  - "atlanta"
+  - "miami"
+  - "dallas"
+  - "houston"
+  - "washington, d"
+  - "washington d"
+  - "d.c."
+  - "virginia"
+  - "california"
+  - "illinois"
+  - "texas"
+  - "massachusetts"
+  - "colorado"
+  - "georgia"
+  - "florida"
+  - "pennsylvania"
+  - "north carolina"
+  - "new jersey"
+  - "maryland"
+  - "arizona"
+  - "oregon"
+  - "washington"
 
 # ── Watchlist ─────────────────────────────────────────────────────────
 # The core of the system. Each entry is a company + its ATS.

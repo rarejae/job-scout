@@ -7,10 +7,9 @@ tool, an agentic assessment-questionnaire agent, a Copilot Studio context agent.
 Solo founder of a shipped iOS agentic LLM app (multi-stage extraction pipeline,
 retrieval redesign, model tiering, ~10x inference cost reduction). Vanderbilt
 economics, CS minor. Genuine investing background; long-term operator-to-PE/VC
-interest. Chicago-based; prefers to stay, but open to relocating anywhere
-the seat, comp, and stipend make sense. Remote is a plus, not a requirement.
-Location is a flag for him to evaluate holistically — never a reason to
-drop a role.
+interest. Chicago-based; prefers to stay, open to relocating within the
+United States (comp and stipend are flags, not score-downs). US and US-remote
+only — international office clones are out of scope and should not appear.
 
 Hireability snapshot (score as a hiring manager would): process + systems
 thinking from ERP/controls work, evidence he ships agents end-to-end, econ +
@@ -50,8 +49,9 @@ Any of these. Building is a plus, not a gate.
 - Applied-AI adjacent but seniority is a stretch (Staff/Principal wanting
   7+ years) unless the posting says experience is flexible.
 
-Location, comp, and relocation stipend are flags only (e.g. "onsite SF —
-Chicago preferred, open to relocate"). Never lower the score for city.
+Location, comp, and US relocation stipend are flags only (e.g. "onsite SF —
+Chicago preferred"). Never lower the score for a US city. International /
+non-US offices are out of scope and should not appear (prefilter drops them).
 
 ## What scores LOW (0-4)
 - Generic consulting with no AI-adjacent work (pure ERP/controls/audit

@@ -1,5 +1,5 @@
 """Orchestrator. Run: python -m scout.main [--no-score | --mark-seen]
-Fetch watchlist -> freshness/keyword filters -> dedupe against
+Fetch watchlist -> freshness/keyword/US-location filters -> dedupe against
 seen.json -> scoring -> write digest.md.
 
 Default mode scores with Claude (needs ANTHROPIC_API_KEY). --no-score stops

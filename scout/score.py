@@ -16,8 +16,8 @@ Scoring discipline:
 - Cast a wide net: 6+ means worth a look in the digest; 8+ means apply this week.
 - Building/operationalizing AI is a plus, not a requirement. AI strategy and
   growth strategy score HIGH even without a build mandate.
-- Location, comp, and relocation stipend are flags only. Never score down
-  for city; he prefers Chicago but will relocate for the right seat.
+- Location: US / US-remote only (prefilter). Within the US, city is a flag
+  not a score-down. Chicago preferred.
 
 Respond ONLY with JSON, no markdown fences, exactly:
 {"score": <int 0-10>, "one_liner": "<15 words max on why>", "flags": ["<any concern, e.g. 'wants 5+ yrs'>"]}"""
