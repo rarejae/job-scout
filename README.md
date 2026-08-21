@@ -13,7 +13,7 @@ application packet; you submit the ATS form yourself. No hits, no noise.
 config.yaml watchlist
         │
         ▼
-ATS fetchers (Greenhouse / Lever / Ashby public JSON) + HN Who's Hiring
+ATS fetchers (Greenhouse / Lever / Ashby / Workday CXS) + HN Who's Hiring
         │
         ▼
 freshness (<7d) → keyword prefilter → US location filter → seen.json dedupe
@@ -52,8 +52,11 @@ uses 1). Local scoring with Haiku is fractions of a cent.
 3. Validate/expand the watchlist (starter set last validated 2026-08-19):
    ```
    .venv/bin/python discover.py anthropic ramp sierra
+   .venv/bin/python discover.py https://adobe.wd5.myworkdayjobs.com/external_experienced
    ```
-   Fix any tokens in `config.yaml` that come back ✗.
+   Fix any Greenhouse/Lever/Ashby tokens in `config.yaml` that come back ✗.
+   A Workday hit prints the careers URL to paste under `watchlist.workday`
+   (you add that key; the agent does not edit `config.yaml`).
 4. Test the pipeline (no key needed — stops after filtering and writes
    `candidates.json`):
    ```
@@ -105,6 +108,10 @@ uses 1). Local scoring with Haiku is fractions of a cent.
    api.lever.co
    hn.algolia.com
    ```
+
+   Workday boards are per-company hosts (`nvidia.wd5.myworkdayjobs.com`). Add
+   each tenant host you put under `watchlist.workday`, or `*.myworkdayjobs.com`
+   if the environment accepts a wildcard.
 
    Prefer a dedicated environment named `job-scout` over widening Default,
    so other Claude Code cloud sessions stay on Trusted. Save, then Run now.
@@ -188,9 +195,9 @@ Interested? Reply in this thread: `@Claude apply #3, #7` or `@Claude apply gh-an
 [Posting](<url>)
 ```
 
-The scout id (`gh-anthropic-5387827008`, `ab-cursor-…`, `lv-…`, `hn-…`) is
-the stable handle. Company + title is not unique (office clones). Omit a
-section heading when that bucket is empty.
+The scout id (`gh-anthropic-5387827008`, `ab-cursor-…`, `lv-…`, `wd-adobe-…`,
+`hn-…`) is the stable handle. Company + title is not unique (office clones).
+Omit a section heading when that bucket is empty.
 
 Never edit `config.yaml` or `profile.md`. On any failure before step 6, post
 the error to Slack and commit nothing; a failure in steps 6-7 should still be
@@ -283,7 +290,13 @@ Packet format:
 
 - **More companies** is the highest-leverage change. The watchlist is the
   system's aperture. Weekly habit: notice an interesting company → run
-  `discover.py` → add the token.
+  `discover.py` → add the token (or, for Workday, the careers URL).
+- **Workday** — no public slug API. Paste a `*.myworkdayjobs.com` careers
+  (or job) URL into `watchlist.workday`. `discover.py <url>` confirms it.
+  The poller POSTs the CXS list at 20 rows, drops stale/non-keyword titles,
+  then GETs detail only for survivors — same job dict as Greenhouse. Do not
+  start with giant boards (NVIDIA-scale); pick companies you actually want.
+  Exa is not in the daily pipeline (search index, not a complete board dump).
 - **PE-specific boards** (no public APIs) — add a fetcher that scrapes and
   diffs; the pipeline only needs the same dict shape back. (Palantir's bespoke
   careers portal is the standing example.)

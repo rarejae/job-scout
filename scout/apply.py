@@ -56,7 +56,7 @@ def _is_digest_n(ref: str) -> bool:
 
 
 def _is_scout_id(ref: str) -> bool:
-    return ref.startswith(("gh-", "lv-", "ab-", "hn-"))
+    return ref.startswith(("gh-", "lv-", "ab-", "hn-", "wd-"))
 
 
 def _fuzzy(cards: list[dict], needle: str) -> list[dict]:

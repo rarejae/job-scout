@@ -4,6 +4,7 @@ from __future__ import annotations
 import datetime as dt
 import html
 import re
+from urllib.parse import urlparse
 
 import requests
 
@@ -19,6 +20,8 @@ def _clean(text: str, limit: int = 1500) -> str:
 def _days_ago(iso: str) -> float:
     try:
         ts = dt.datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=dt.timezone.utc)
     except (ValueError, AttributeError):
         return 9999
     return (dt.datetime.now(dt.timezone.utc) - ts).total_seconds() / 86400
@@ -142,6 +145,182 @@ def _hn_job(item: dict, kw: str = "", description_limit: int = 8000) -> dict:
     }
 
 
+_LOCALE_SEG = re.compile(r"^[a-z]{2}(?:-[a-z]{2})?$", re.I)
+_WD_HOST = re.compile(r"^([a-z0-9-]+)\.(wd\d+)\.myworkdayjobs\.com$", re.I)
+_WD_POSTED = re.compile(
+    r"Posted\s+(?:Today|Yesterday|(?P<plus>\d+)\+\s+Days?\s+Ago|(?P<n>\d+)\s+Days?\s+Ago)",
+    re.I,
+)
+
+
+def parse_workday_url(url: str) -> dict:
+    """Pull tenant, shard, and site out of a careers or job URL."""
+    u = urlparse(url.strip())
+    host = (u.netloc or "").lower()
+    m = _WD_HOST.match(host)
+    if not m:
+        raise ValueError(f"not a myworkdayjobs.com URL: {url}")
+    tenant, shard = m.group(1).lower(), m.group(2).lower()
+    parts = [p for p in u.path.split("/") if p]
+    if parts and _LOCALE_SEG.match(parts[0]):
+        parts = parts[1:]
+    if not parts:
+        raise ValueError(f"Workday URL missing site name: {url}")
+    site = parts[0]
+    return {
+        "url": f"https://{host}/{site}",
+        "host": host,
+        "tenant": tenant,
+        "shard": shard,
+        "site": site,
+        "origin": f"https://{host}",
+    }
+
+
+def _workday_days_ago(posted_on: str) -> float:
+    """Parse CXS list 'Posted Today' / 'Posted 3 Days Ago' / 'Posted 30+ Days Ago'."""
+    if not posted_on:
+        return 9999
+    s = posted_on.strip()
+    if re.search(r"\bToday\b", s, re.I):
+        return 0.0
+    if re.search(r"\bYesterday\b", s, re.I):
+        return 1.0
+    m = _WD_POSTED.search(s)
+    if m and m.group("plus"):
+        return float(m.group("plus")) + 1  # 30+ → treat as older than 30
+    if m and m.group("n"):
+        return float(m.group("n"))
+    return 9999
+
+
+def _workday_req_id(posting: dict) -> str:
+    bullets = posting.get("bulletFields") or []
+    if bullets:
+        return str(bullets[0])
+    path = posting.get("externalPath") or ""
+    m = re.search(r"(JR\d+[0-9]*|[A-Z]{2,}\d+)$", path)
+    return m.group(1) if m else path.rsplit("/", 1)[-1]
+
+
+def _workday_headers(parsed: dict, json_body: bool = False) -> dict:
+    h = {
+        **UA,
+        "Accept": "application/json",
+        "Accept-Language": "en-US",
+        "Referer": f"{parsed['origin']}/en-US/{parsed['site']}",
+    }
+    if json_body:
+        h["Content-Type"] = "application/json"
+    return h
+
+
+def _workday_list_page(parsed: dict, offset: int, search_text: str = "") -> dict:
+    url = (f"{parsed['origin']}/wday/cxs/{parsed['tenant']}/"
+           f"{parsed['site']}/jobs")
+    r = requests.post(
+        url,
+        json={"appliedFacets": {}, "limit": 20, "offset": offset,
+              "searchText": search_text},
+        headers=_workday_headers(parsed, json_body=True),
+        timeout=TIMEOUT,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def _workday_detail(parsed: dict, external_path: str,
+                    description_limit: int = 1500) -> dict:
+    url = f"{parsed['origin']}/wday/cxs/{parsed['tenant']}/{parsed['site']}{external_path}"
+    r = requests.get(url, headers=_workday_headers(parsed), timeout=TIMEOUT)
+    r.raise_for_status()
+    info = (r.json() or {}).get("jobPostingInfo") or {}
+    req = info.get("jobReqId") or _workday_req_id({"externalPath": external_path})
+    extra = info.get("additionalLocations") or []
+    loc = info.get("location") or ""
+    extra_bits = []
+    for x in extra:
+        if isinstance(x, dict):
+            s = x.get("descriptor") or x.get("name") or ""
+        else:
+            s = str(x) if x else ""
+        if s and s != loc:
+            extra_bits.append(s)
+    if extra_bits:
+        loc = f"{loc} | {'; '.join(extra_bits)}" if loc else "; ".join(extra_bits)
+    posted = info.get("startDate") or ""
+    days = _days_ago(posted) if posted else _workday_days_ago(info.get("postedOn") or "")
+    apply_url = (info.get("externalUrl")
+                 or f"{parsed['origin']}/en-US/{parsed['site']}{external_path}")
+    return {
+        "id": f"wd-{parsed['tenant']}-{req}",
+        "company": parsed["tenant"],
+        "title": info.get("title") or "",
+        "location": loc,
+        "department": info.get("timeType") or "",
+        "url": apply_url,
+        "posted_days_ago": days,
+        "description": _clean(info.get("jobDescription") or "",
+                              limit=description_limit),
+    }
+
+
+def _title_matches(title: str, kw_patterns: list[re.Pattern[str]] | None) -> bool:
+    if not kw_patterns:
+        return True
+    hay = (title or "").lower()
+    return any(p.search(hay) for p in kw_patterns)
+
+
+def fetch_workday(careers_url: str, max_age_days: int = 7,
+                  kw_patterns: list[re.Pattern[str]] | None = None) -> list[dict]:
+    """Poll a Workday CXS board: list at 20, detail-fetch only prefilter hits."""
+    parsed = parse_workday_url(careers_url)
+    jobs: list[dict] = []
+    seen_ids: set[str] = set()
+    offset = 0
+    while offset <= 10_000:
+        data = _workday_list_page(parsed, offset)
+        batch = data.get("jobPostings") or []
+        if not batch:
+            break
+        for posting in batch:
+            days = _workday_days_ago(posting.get("postedOn") or "")
+            if days > max_age_days:
+                continue
+            if not _title_matches(posting.get("title") or "", kw_patterns):
+                continue
+            path = posting.get("externalPath") or ""
+            if not path:
+                continue
+            try:
+                job = _workday_detail(parsed, path)
+            except Exception:
+                continue
+            if job["id"] in seen_ids:
+                continue
+            seen_ids.add(job["id"])
+            jobs.append(job)
+        offset += 20
+    return jobs
+
+
+def _parse_workday_scout_id(scout_id: str, watchlist: dict | None
+                            ) -> tuple[str, str, str]:
+    rest = scout_id[3:]
+    parsed_list = []
+    for url in (watchlist or {}).get("workday") or []:
+        try:
+            parsed_list.append(parse_workday_url(url))
+        except ValueError:
+            continue
+    for p in sorted(parsed_list, key=lambda x: len(x["tenant"]), reverse=True):
+        t = p["tenant"]
+        if rest.startswith(t + "-"):
+            return ("workday", p["url"], rest[len(t) + 1:])
+    raise ValueError(f"workday id {scout_id} does not match any watchlist URL")
+
+
 _ATS_PREFIX = {"gh": "greenhouse", "lv": "lever", "ab": "ashby"}
 
 
@@ -149,6 +328,8 @@ def parse_scout_id(scout_id: str, watchlist: dict | None = None) -> tuple[str, s
     """Return (ats, token, native_id) for a scout id like gh-anthropic-5387827008."""
     if scout_id.startswith("hn-"):
         return ("hn", "", scout_id[3:])
+    if scout_id.startswith("wd-"):
+        return _parse_workday_scout_id(scout_id, watchlist)
     prefix = scout_id[:2]
     ats = _ATS_PREFIX.get(prefix)
     if ats is None or not scout_id.startswith(prefix + "-"):
@@ -199,4 +380,28 @@ def fetch_one(scout_id: str, watchlist: dict | None = None,
         r = requests.get(url, headers=UA, timeout=TIMEOUT)
         r.raise_for_status()
         return _hn_job(r.json(), description_limit=description_limit)
+    if ats == "workday":
+        parsed = parse_workday_url(token)
+        path = None
+        data = _workday_list_page(parsed, 0, search_text=native)
+        path = next(
+            (j.get("externalPath") for j in (data.get("jobPostings") or [])
+             if _workday_req_id(j) == native),
+            None,
+        )
+        offset = 0
+        while path is None and offset <= 10_000:
+            page = _workday_list_page(parsed, offset)
+            batch = page.get("jobPostings") or []
+            if not batch:
+                break
+            path = next(
+                (j.get("externalPath") for j in batch
+                 if _workday_req_id(j) == native),
+                None,
+            )
+            offset += 20
+        if not path:
+            raise LookupError(f"workday job {native} not on {parsed['site']}")
+        return _workday_detail(parsed, path, description_limit=description_limit)
     raise ValueError(f"unknown ats {ats}")

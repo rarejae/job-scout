@@ -154,6 +154,7 @@ def main() -> None:
     no_score = "--no-score" in sys.argv
 
     seen = load_seen()
+    kw_patterns = _keyword_patterns(cfg["prefilter_keywords"])
 
     raw: list[dict] = []
     sources_ok = sources_failed = 0
@@ -163,7 +164,23 @@ def main() -> None:
         "ashby": fetchers.fetch_ashby,
     }
     for ats, tokens in (cfg.get("watchlist") or {}).items():
+        if ats == "workday":
+            for url in tokens or []:
+                try:
+                    raw.extend(fetchers.fetch_workday(
+                        url,
+                        max_age_days=cfg["max_age_days"],
+                        kw_patterns=kw_patterns,
+                    ))
+                    sources_ok += 1
+                except Exception as e:
+                    sources_failed += 1
+                    print(f"[warn] workday:{url} failed: {e}", file=sys.stderr)
+            continue
         fn = fetch_map.get(ats)
+        if fn is None:
+            print(f"[warn] unknown ats '{ats}' — skipping", file=sys.stderr)
+            continue
         for token in tokens or []:
             try:
                 raw.extend(fn(token))
@@ -180,7 +197,6 @@ def main() -> None:
             sources_failed += 1
             print(f"[warn] HN fetch failed: {e}", file=sys.stderr)
 
-    kw_patterns = _keyword_patterns(cfg["prefilter_keywords"])
     fresh: list[dict] = []
     run_ids: set[str] = set()  # HN comments can match several keywords per run
     for j in raw:
