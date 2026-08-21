@@ -89,8 +89,12 @@ uses 1). Local scoring with Haiku is fractions of a cent.
 ## Runbook (what the routine executes)
 
 1. `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
-2. `.venv/bin/python -m scout.main --no-score` — fetches and filters, writes
-   `candidates.json`. Read its summary line (`sources_ok=… sources_failed=…`):
+2. `.venv/bin/python -m scout.main --no-score` — fetches and filters, collapses
+   same-role multi-city postings to the best city in `city_priority`
+   (Chicago → NYC → Atlanta → SF → other US), writes `candidates.json`.
+   Dropped city clones are on each winner as `collapsed_ids` / `also_locations`
+   — `--mark-seen` still records them. Read the summary line
+   (`sources_ok=… sources_failed=…`):
    - If it exits nonzero or most sources failed, that's an outage, not an
      empty day — post the error output to Slack and stop (commit nothing).
    - If sources are healthy and it reports 0 candidates, post "no candidates

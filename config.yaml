@@ -82,6 +82,14 @@ locations:
   - "oregon"
   - "washington"
 
+# Same role, many cities: keep one posting. First matching bucket wins.
+# 1 Chicago  2 NYC  3 Atlanta  4 SF / Bay Area  5 anywhere else in the US
+city_priority:
+  - [chicago]
+  - [new york, nyc]
+  - [atlanta]
+  - [san francisco, bay area, menlo park, palo alto, mountain view, redwood city]
+
 # ── Watchlist ─────────────────────────────────────────────────────────
 # The core of the system. Each entry is a company + its ATS.
 # Tokens are the slug in the company's careers URL:

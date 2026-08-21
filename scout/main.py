@@ -66,13 +66,79 @@ def passes_prefilter(job: dict, cfg: dict, kw_patterns: list[re.Pattern[str]]) -
     return True
 
 
+def _location_rank(loc: str, buckets: list[list[str]]) -> int:
+    hay = (loc or "").lower()
+    for i, needles in enumerate(buckets):
+        if any(n.lower() in hay for n in needles):
+            return i
+    return len(buckets)  # other US
+
+
+# Trailing geo tokens on titles like "FDE - Poland" / "Architect (France)".
+_GEO_TAIL = re.compile(
+    r"(?:,|\s[-–]|[\s(])+\s*(?:north america|united states|usa|us|"
+    r"chicago|new york|nyc|san francisco|sf|atlanta|seattle|boston|"
+    r"austin|denver|los angeles|california|illinois|remote|"
+    r"poland|germany|france|denmark|switzerland|ireland|portugal|"
+    r"spain|greece|india|bangalore|mumbai|sydney|australia|tokyo|"
+    r"japan|seoul|korea|paris|munich|berlin|london|dublin|uk|"
+    r"united kingdom|uae|saudi arabia|brazil|emea|apac)"
+    r"\)?\s*$",
+    re.I,
+)
+
+
+def _role_key(job: dict) -> tuple[str, str]:
+    if job["id"].startswith("hn-"):
+        return ("hn", job["id"])
+    title = job["title"].strip()
+    while True:
+        stripped = _GEO_TAIL.sub("", title).strip()
+        if stripped == title:
+            break
+        title = stripped
+    return (job["company"].lower(), re.sub(r"\s+", " ", title).lower())
+
+
+def collapse_city_duplicates(jobs: list[dict], cfg: dict) -> list[dict]:
+    """Keep one posting per role, preferring city_priority. Dropped ids stay
+    on the winner as collapsed_ids so --mark-seen still eats them."""
+    buckets = cfg.get("city_priority") or []
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for j in jobs:
+        groups.setdefault(_role_key(j), []).append(j)
+
+    kept: list[dict] = []
+    for key, group in groups.items():
+        if key[0] == "hn" or len(group) == 1:
+            kept.extend(group)
+            continue
+        group.sort(key=lambda j: (
+            _location_rank(j.get("location") or "", buckets),
+            j.get("posted_days_ago", 0),
+        ))
+        winner = dict(group[0])
+        others = group[1:]
+        winner["collapsed_ids"] = [o["id"] for o in others]
+        extra_locs = sorted({
+            (o.get("location") or "").strip() for o in others if (o.get("location") or "").strip()
+        } - {(winner.get("location") or "").strip()})
+        if extra_locs:
+            winner["also_locations"] = extra_locs
+        kept.append(winner)
+    return kept
+
+
 def mark_seen(max_age_days: int) -> None:
     if not CANDIDATES_PATH.exists():
         print("no candidates.json — nothing to mark")
         return
     seen = load_seen()
     today = dt.date.today().isoformat()
-    ids = {j["id"] for j in json.loads(CANDIDATES_PATH.read_text())}
+    ids = set()
+    for j in json.loads(CANDIDATES_PATH.read_text()):
+        ids.add(j["id"])
+        ids.update(j.get("collapsed_ids") or [])
     seen.update({i: today for i in ids})
     save_seen(seen, max_age_days)
     CANDIDATES_PATH.unlink()
@@ -122,8 +188,11 @@ def main() -> None:
         if passes_prefilter(j, cfg, kw_patterns):
             fresh.append(j)
             run_ids.add(j["id"])
+    n_before = len(fresh)
+    fresh = collapse_city_duplicates(fresh, cfg)
     print(f"sources_ok={sources_ok} sources_failed={sources_failed} "
-          f"fetched={len(raw)} candidates_after_filters={len(fresh)}")
+          f"fetched={len(raw)} candidates_after_filters={n_before} "
+          f"after_city_dedupe={len(fresh)}")
     if sources_ok == 0:
         raise SystemExit("all sources failed — outage, not an empty day; nothing written")
 
@@ -156,7 +225,10 @@ def main() -> None:
     hits.sort(key=lambda x: -x[0]["score"])
     lines = [f"# Job Scout — {today}", "", f"{len(hits)} match(es) above threshold.", ""]
     for result, job in hits:
-        flags = f" · ⚠️ {', '.join(result['flags'])}" if result.get("flags") else ""
+        flags_list = list(result.get("flags") or [])
+        if job.get("also_locations"):
+            flags_list.append("also listed: " + "; ".join(job["also_locations"]))
+        flags = f" · ⚠️ {', '.join(flags_list)}" if flags_list else ""
         lines += [
             f"### {result['score']}/10 — {job['title']} @ {job['company']}",
             f"{job['location'] or 'location unlisted'} · posted {job['posted_days_ago']:.0f}d ago{flags}",
