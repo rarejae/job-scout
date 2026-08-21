@@ -18,6 +18,7 @@ import sys
 import yaml
 
 from . import fetchers
+from .digest import format_digest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SEEN_PATH = ROOT / "seen.json"
@@ -223,21 +224,7 @@ def main() -> None:
         return
 
     hits.sort(key=lambda x: -x[0]["score"])
-    lines = [f"# Job Scout — {today}", "", f"{len(hits)} match(es) above threshold.", ""]
-    for result, job in hits:
-        flags_list = list(result.get("flags") or [])
-        if job.get("also_locations"):
-            flags_list.append("also listed: " + "; ".join(job["also_locations"]))
-        flags = f" · ⚠️ {', '.join(flags_list)}" if flags_list else ""
-        lines += [
-            f"### {result['score']}/10 — {job['title']} @ {job['company']}",
-            f"{job['location'] or 'location unlisted'} · posted {job['posted_days_ago']:.0f}d ago{flags}",
-            f"> {result['one_liner']}",
-            "",
-            f"[Posting]({job['url']})",
-            "",
-        ]
-    DIGEST_PATH.write_text("\n".join(lines))
+    DIGEST_PATH.write_text(format_digest(hits, today))
     print(f"digest written with {len(hits)} hits")
 
 

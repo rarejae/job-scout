@@ -4,7 +4,8 @@ Agentic job-opportunity screener. Every morning a scheduled Claude routine
 pulls fresh postings (< 7 days old) straight from company ATS endpoints — the
 source underneath career pages, hours-to-days before postings hit aggregators —
 scores each against a personal fit profile, and posts a ranked digest to
-Slack. No hits, no noise.
+Slack. Reply in that thread with `@Claude apply #3` to get a paste-ready
+application packet; you submit the ATS form yourself. No hits, no noise.
 
 ## How it works
 
@@ -22,7 +23,14 @@ Scorer (rubric = profile.md): the routine's Claude agent scores candidates
 itself; local runs can use Haiku via the Anthropic API
         │
         ▼
-digest.md → Slack (#job-scout) · seen.json + digests/ committed back to the repo
+digest.md → Slack (#job-scout): 8+ as the parent, 6–7 as a thread reply
+        │
+        ▼
+@Claude apply #N  →  re-fetch JD  →  applications/<date>-<id>.md
+                  →  packet posted back to the Slack thread
+        │
+        ▼
+seen.json + digests/ + applications/ committed back to the repo
 ```
 
 Cost: prefiltering keeps scored postings to a few dozen per run. The routine
@@ -56,14 +64,31 @@ uses 1). Local scoring with Haiku is fractions of a cent.
    `ANTHROPIC_API_KEY=sk-... .venv/bin/python -m scout.main`.
 5. One-time: connect Slack at claude.ai → Settings → Connectors (a free
    personal workspace with a `#job-scout` channel keeps this separate from
-   work).
-6. Create the routine at claude.ai/code/routines → New routine → Cloud:
+   work). Invite Claude to `#job-scout`.
+6. Paste a current resume into `resume.md` and fill any ATS screening facts
+   in `apply-facts.md`. The apply agent will refuse to draft if `resume.md`
+   is still empty, and will leave screening fields blank rather than invent
+   them. Never put these in `profile.md` (that's the scoring rubric only).
+7. Point Slack `@Claude` at this repo so apply mentions actually run the
+   Apply runbook (not a generic chat reply):
+   - Preferred: in Claude / Claude Code settings for Slack, attach GitHub
+     repo `rarejae/job-scout` (or a Claude Project whose instructions are
+     "follow the Apply runbook in README.md"). Then `@Claude apply #3` in
+     the digest thread is enough — numbers, scout ids, and URLs are in the
+     parent message.
+   - Fallback if Slack Claude has no repo access: a second Claude Code
+     cloud routine, every few hours, whose prompt is "Read new replies on
+     today's `#job-scout` digest thread. For any `apply …` line, run the
+     Apply runbook in README.md and reply in that thread with the packet."
+     Pro allows 5 routine runs/day; the morning scout uses 1, so this can
+     consume the rest. Same Custom network domains as the daily routine.
+8. Create the daily routine at claude.ai/code/routines → New routine → Cloud:
    - Repo: `rarejae/job-scout`
    - Schedule: daily, 8:00 AM Central
    - Connector: Slack
    - Prompt: "Run the daily job-scout pipeline exactly as documented in the
-     Runbook section of README.md, then post the digest (or a one-line 'no
-     hits today') to the #job-scout Slack channel."
+     Runbook section of README.md. Post to #job-scout as specified there
+     (8+ parent, 6–7 thread reply, or a one-line 'no hits today')."
 
    Requires Claude Code on the web enabled; Pro includes 5 routine runs/day.
 
@@ -106,14 +131,30 @@ uses 1). Local scoring with Haiku is fractions of a cent.
    auto-kill consulting; AI-adjacent work at a firm he'd learn from can
    score MID or HIGH.
 4. Write `digest.md` with only candidates scoring >= `score_threshold` in
-   `config.yaml`, sorted by score descending, in the digest format below.
-   If there are hits, also copy it to `digests/<YYYY-MM-DD>.md` (a committed
+   `config.yaml`, sorted by score descending, **globally numbered**, in the
+   digest format below. Hits at 8+ go under `## Apply this week (8+)`; 6–7
+   go under `## Also looking (6–7)`. Numbering is continuous across both
+   sections so `#3` is unique. If there are hits, also copy the **full**
+   `digest.md` (both sections) to `digests/<YYYY-MM-DD>.md` (a committed
    archive — nothing is lost if delivery fails, and history helps tuning).
-5. Post the full `digest.md` to `#job-scout` on Slack (or "no hits this run"
-   if nothing cleared the threshold). Post BEFORE committing seen state:
-   if delivery fails, stop here so today's candidates resurface next run.
+5. Post to `#job-scout` on Slack **before** committing seen state. Split so
+   Slack stays inside its size limit (a 90-hit blob can truncate, which
+   breaks `#N`):
+   ```
+   .venv/bin/python -m scout.digest
+   ```
+   writes gitignored `digest-parent.md` (8+ plus header/footer) and, when
+   needed, `digest-thread.md` (6–7, same global numbers). Then:
+   - Parent message: the contents of `digest-parent.md`.
+   - Thread reply, if `digest-thread.md` was written: post it as a reply
+     on that parent.
+   - If nothing scored 8+, `digest-parent.md` is the 6–7 section (never an
+     empty parent).
+   - If nothing cleared the threshold, post "no hits this run".
+   If delivery fails, stop here so today's candidates resurface next run.
 6. `.venv/bin/python -m scout.main --mark-seen` — folds today's candidates
-   into `seen.json` so they're never re-scored.
+   into `seen.json` so they're never re-scored. Does not affect apply
+   packets; apply is a separate queue.
 7. `git pull --rebase`, then commit `seen.json` (and `digests/` if written)
    to `main` ("scout: update seen state") and push. If the rebase conflicts
    on `seen.json`, resolve by unioning the entries of both versions (it's a
@@ -124,18 +165,109 @@ Digest format:
 ```markdown
 # Job Scout — <YYYY-MM-DD>
 
-<N> match(es) above threshold.
+<N> match(es) above threshold. <K> apply-this-week (8+).
 
-### <score>/10 — <title> @ <company>
+Interested? Reply in this thread: `@Claude apply #3, #7` or `@Claude apply gh-anthropic-…`
+
+## Apply this week (8+)
+
+### 1. <score>/10 — <title> @ <company>
+`<scout-id>`
+<location or "location unlisted"> · posted <N>d ago · ⚠️ <flags, if any>
+> <one-liner, 15 words max>
+
+[Posting](<url>)
+
+## Also looking (6–7)
+
+### 13. <score>/10 — <title> @ <company>
+`<scout-id>`
 <location or "location unlisted"> · posted <N>d ago · ⚠️ <flags, if any>
 > <one-liner, 15 words max>
 
 [Posting](<url>)
 ```
 
+The scout id (`gh-anthropic-5387827008`, `ab-cursor-…`, `lv-…`, `hn-…`) is
+the stable handle. Company + title is not unique (office clones). Omit a
+section heading when that bucket is empty.
+
 Never edit `config.yaml` or `profile.md`. On any failure before step 6, post
 the error to Slack and commit nothing; a failure in steps 6-7 should still be
 reported to Slack after retrying once.
+
+## Apply runbook (on `@Claude apply …`)
+
+Harness-agnostic: Slack Claude with this repo attached, a Cursor/Claude Code
+session, or the polling-routine fallback. Do not auto-draft every 8+ hit;
+only run this when the user asks. Do not submit the ATS form. Do not email
+the company.
+
+Trigger examples (reply in the digest thread):
+
+- `@Claude apply #3, #7`
+- `@Claude apply gh-anthropic-5387827008`
+- `@Claude apply the Anthropic FDE role`
+
+Steps:
+
+1. Resolve to scout ids. `#N` → that day's `digests/<YYYY-MM-DD>.md` (or
+   the parent Slack message / working `digest.md`). Fuzzy title → if more
+   than one match, **ask which id**, do not guess.
+   ```
+   .venv/bin/python -m scout.apply --digest digests/<YYYY-MM-DD>.md 3 7
+   ```
+   That re-fetches the JD from the ATS (do not rely on `candidates.json`;
+   it is gone after `--mark-seen`) and prints JSON. If the posting is gone,
+   say so and stop for that id. If there is no public apply URL, say so
+   and stop.
+2. Read `profile.md` (fit + seniority calibration), `resume.md` (work
+   history), and `apply-facts.md` (screening). If `resume.md` has nothing
+   under `## Paste`, refuse and ask the user to paste a resume. Never
+   invent employment, education, or contact details.
+3. Write `applications/<YYYY-MM-DD>-<scout-id>.md` in the packet format
+   below. Optional: `python -m scout.apply --stub <id>` writes a skeleton
+   (header + JD) if the file does not already exist — then fill the prose
+   sections. Do not overwrite a packet that already has a cover note.
+4. Post the packet (why-me, cover note, screening, apply URL — skip the
+   raw JD if it makes the Slack message huge) back to the same Slack
+   thread. Post, then `git pull --rebase`, commit `applications/`
+   ("scout: apply packet <company> <id>"), and push. If Slack fails, still
+   keep the file and commit it so the draft is not lost.
+5. Never mark-seen as part of this flow. Never edit `resume.md` or
+   `apply-facts.md`.
+
+Packet format:
+
+```markdown
+# Apply packet — <title> @ <company>
+
+- date: <YYYY-MM-DD>
+- id: `<scout-id>`
+- score: <N>/10
+- location: <location> · <flags from the digest, if any>
+- apply: <url>
+
+## Why me
+1. <bullet mapped to the JD>
+2. <bullet>
+3. <bullet>
+
+## Cover note
+<~120 words for the ATS text box>
+
+## Screening
+- Work authorization: <from apply-facts.md, or omit>
+- Location: <from apply-facts.md, or omit>
+- Compensation: <from apply-facts.md, or omit>
+- Start date: <from apply-facts.md, or omit>
+
+## Do not claim
+- <from profile.md seniority calibration — e.g. not a 5-year production SWE>
+
+## Job description
+<re-fetched JD; archive only, do not dump this whole block into Slack>
+```
 
 ## Tuning
 
@@ -155,6 +287,5 @@ reported to Slack after retrying once.
 - **PE-specific boards** (no public APIs) — add a fetcher that scrapes and
   diffs; the pipeline only needs the same dict shape back. (Palantir's bespoke
   careers portal is the standing example.)
-- **Auto-drafted outreach**: add a second Claude call for 9-10/10 hits that
-  drafts a first-line-of-cover-note using profile.md. Deliberately not
-  included by default — review before anything leaves your name.
+- **Apply packets** are on-demand via the Apply runbook, not auto-sent.
+  Browser auto-fill / ATS submit is deliberately out of scope.
