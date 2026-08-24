@@ -1,0 +1,4 @@
+# Pinned: the routine rebuilds its venv from scratch every run, so unpinned
+# deps would let an upstream release change pipeline behavior overnight.
+requests==2.34.2
+pyyaml==6.0.3

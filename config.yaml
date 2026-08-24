@@ -1,0 +1,172 @@
+# ── Job Scout configuration ──────────────────────────────────────────
+# Postings older than this many days are ignored entirely.
+max_age_days: 7
+
+# Minimum LLM fit score (0-10) to make the digest.
+score_threshold: 6
+
+# Keyword prefilter: a posting must match at least one to be sent to the
+# LLM scorer. Keeps API cost near zero. Case-insensitive, matched against
+# title + department.
+prefilter_keywords:
+  - "ai"
+  - "applied"
+  - "agent"
+  - "llm"
+  - "machine learning"
+  - "automation"
+  - "forward deployed"
+  - "solutions engineer"
+  - "value creation"
+  - "portfolio operations"
+  - "data"
+  - "platform"
+  - "strategy"
+  - "bizops"
+  - "business operations"
+  - "chief of staff"
+  - "gtm"
+  - "revops"
+  - "product operations"
+  - "special projects"
+  - "corporate development"
+  - "enablement"
+  - "growth strategy"
+  - "ai strategy"
+  - "ai consulting"
+
+# Hard location filter applied BEFORE scoring. A posting with a non-empty
+# location must match at least one substring (case-insensitive). Empty
+# location (HN / unlisted) still passes. This is USA-only — international
+# office clones of the same req were drowning the digest.
+locations:
+  - "united states"
+  - "usa"
+  - "u.s."
+  - "us-"
+  - "usca"
+  - "chicago"
+  - "new york"
+  - "nyc"
+  - "san francisco"
+  - "bay area"
+  - "menlo park"
+  - "palo alto"
+  - "mountain view"
+  - "redwood city"
+  - "seattle"
+  - "austin"
+  - "boston"
+  - "los angeles"
+  - "denver"
+  - "atlanta"
+  - "miami"
+  - "dallas"
+  - "houston"
+  - "washington, d"
+  - "washington d"
+  - "d.c."
+  - "virginia"
+  - "california"
+  - "illinois"
+  - "texas"
+  - "massachusetts"
+  - "colorado"
+  - "georgia"
+  - "florida"
+  - "pennsylvania"
+  - "north carolina"
+  - "new jersey"
+  - "maryland"
+  - "arizona"
+  - "oregon"
+  - "washington"
+
+# Same role, many cities: keep one posting. First matching bucket wins.
+# 1 Chicago  2 NYC  3 Atlanta  4 SF / Bay Area  5 anywhere else in the US
+city_priority:
+  - [chicago]
+  - [new york, nyc]
+  - [atlanta]
+  - [san francisco, bay area, menlo park, palo alto, mountain view, redwood city]
+
+# ── Watchlist ─────────────────────────────────────────────────────────
+# The core of the system. Each entry is a company + its ATS.
+# Tokens are the slug in the company's careers URL:
+#   Greenhouse: boards.greenhouse.io/<token>
+#   Lever:      jobs.lever.co/<token>
+#   Ashby:      jobs.ashbyhq.com/<token>
+# Run `python discover.py <company-name>` to probe for a token.
+# Tokens below validated via discover.py (2026-08-19 + 2026-08-20).
+# 0-posting / dead tokens omitted. Palantir has no public G/L/A board.
+
+watchlist:
+  greenhouse:
+    - anthropic          # applied AI / forward deployed
+    - scaleai
+    - vercel
+    - datadog
+    - stripe             # solutions / ops / applied
+    - databricks
+    - togetherai
+    - figma
+    - airtable
+    - cloudflare
+    - mongodb
+    - elastic
+    - brex
+    - mercury
+    - block
+    - carta              # PE-adjacent ops
+    - gusto
+    - a16z               # VC platform / ops
+    - generalcatalyst
+    - relativity         # Chicago
+    - sproutsocial       # Chicago
+    - gleanwork          # Glean — FDE / applied search
+    - xai
+    - bessemerventurepartners
+    - hextechnologies
+    - fivetran
+    - intercom
+  lever: []              # nothing on Lever today; fetcher stays for future adds
+  ashby:
+    - openai
+    - cursor             # anysphere
+    - linear
+    - notion
+    - perplexity
+    - sierra
+    - decagon
+    - harvey
+    - cohere
+    - plaid
+    - ramp
+    - snowflake
+    - langchain
+    - replit
+    - cognition          # Devin / agents
+    - temporal
+    - 1password
+    - pinecone
+    - langfuse
+    - sequoia            # VC
+    - poolside
+    - g2                 # Chicago
+    - elevenlabs
+    - lumaai
+    - writer
+    - zapier
+    - n8n
+    - modal
+    - anyscale
+    - fireworks
+    - thinkingmachines
+
+# HN "Who is Hiring" — searched via the public Algolia API. No tokens needed.
+hn_who_is_hiring: true
+hn_keywords:
+  - "forward deployed"
+  - "applied ai"
+  - "ai engineer"
+  - "agents"

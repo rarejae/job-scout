@@ -1,0 +1,10 @@
+.env
+.env.*
+.venv/
+__pycache__/
+*.pyc
+digest.md
+digest-parent.md
+digest-thread.md
+candidates.json
+.DS_Store
