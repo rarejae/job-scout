@@ -1,10 +1,10 @@
 # Resume
 
-Ground truth for the apply agent. The apply agent must never edit this
+Ground truth for the apply agent. Copy to `resume.md` at the repo root
+(gitignored). Attach it to the apply job (or inline with
+`python -m scout.prompt --apply`). The apply agent must never edit this
 file and must never invent facts not present below. If `## Paste` is
 empty, refuse to draft.
-
-If this file contains a real resume, keep the GitHub repo **private**.
 
 ## Paste
 

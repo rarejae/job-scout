@@ -8,8 +8,10 @@ an application packet is a separate flow: follow the **Apply runbook** in
 
 Rules that apply to every session:
 
-- Never edit `config.yaml`, `profile.md`, `resume.md`, or `apply-facts.md`;
-  the user tunes those by hand.
+- `profile.md`, `resume.md`, and `apply-facts.md` are personal inputs. They
+  arrive as attachments / `<profile>` blocks on the scheduled job, or as
+  gitignored local files. Never edit them. Never commit them.
+- Never edit `config.yaml`; the user tunes that by hand.
 - `seen.json` is the dedupe state (`{id: date_first_seen}`); only change it
   via `python -m scout.main --mark-seen`.
 - `digest.md` and `candidates.json` are gitignored working files;

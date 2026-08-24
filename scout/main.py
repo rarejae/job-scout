@@ -219,9 +219,10 @@ def main() -> None:
               f"(seen.json untouched until --mark-seen)")
         return
 
+    from .inputs import load_profile
     from .score import get_client, score_posting  # lazy: --no-score needs no anthropic package
 
-    profile = (ROOT / "profile.md").read_text()
+    profile = load_profile()
     client = get_client()
     today = dt.date.today().isoformat()
     hits = []

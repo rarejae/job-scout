@@ -1,8 +1,10 @@
 # Candidate fit profile (used verbatim as scoring context)
 
-Fill this in before the first run. It is the scoring rubric, not a resume —
-work history goes in `resume.md`. The daily routine reads this file from
-whatever GitHub repo it is pointed at.
+Copy to `profile.md` at the repo root (gitignored) and fill this in before
+the first run. Attach that file to the scheduled job — or run
+`python -m scout.prompt` to inline it into the routine Instructions.
+
+This is the scoring rubric, not a resume. Work history goes in `resume.md`.
 
 ## Who
 <!-- 4–8 sentences: role, years, what you've actually shipped, school if

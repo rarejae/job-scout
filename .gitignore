@@ -8,3 +8,8 @@ digest-parent.md
 digest-thread.md
 candidates.json
 .DS_Store
+
+# Personal inputs — attach to the scheduled job / keep local. See examples/.
+/profile.md
+/resume.md
+/apply-facts.md

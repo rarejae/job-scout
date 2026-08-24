@@ -19,8 +19,8 @@ ATS fetchers (Greenhouse / Lever / Ashby / Workday CXS) + HN Who's Hiring
 freshness (<7d) → keyword prefilter → US location filter → seen.json dedupe
         │
         ▼
-Scorer (rubric = profile.md): the routine's Claude agent scores candidates
-itself; local runs can use Haiku via the Anthropic API
+Scorer (rubric = attached profile.md): the routine's Claude agent scores
+candidates itself; local runs can use Haiku via the Anthropic API
         │
         ▼
 digest.md → Slack (#job-scout): 8+ as the parent, 6–7 as a thread reply
@@ -31,20 +31,51 @@ digest.md → Slack (#job-scout): 8+ as the parent, 6–7 as a thread reply
         │
         ▼
 seen.json + digests/ + applications/ committed back to the repo
+(profile.md / resume.md / apply-facts.md stay out of git)
 ```
 
 Cost: prefiltering keeps scored postings to a few dozen per run. The routine
 draws from a normal Claude subscription (Pro allows 5 routine runs/day; this
 uses 1). Local scoring with Haiku is fractions of a cent.
 
+## Personal inputs (not in git)
+
+Three markdowns are **yours**, not the repo. They never get committed:
+
+| File | Role |
+|------|------|
+| `profile.md` | Scoring rubric for the daily digest |
+| `resume.md` | Work history for apply packets |
+| `apply-facts.md` | ATS screening facts for apply packets |
+
+The scheduled job gets them as **prompt attachments**. Claude Code routines
+don't have a separate file-picker, so the saved Instructions *are* that
+surface: either paste the files into the prompt, or generate the prompt
+with them already inlined.
+
+```
+cp examples/profile.md profile.md       # then fill it in
+cp examples/resume.md resume.md
+cp examples/apply-facts.md apply-facts.md
+.venv/bin/python -m scout.prompt          # daily job → stdout
+.venv/bin/python -m scout.prompt --apply  # apply job → stdout
+```
+
+Paste the printed text into the routine's Instructions. Re-run
+`python -m scout.prompt` whenever you edit the markdowns, and replace the
+Instructions so the next run picks up the change.
+
+Each routine reads whatever was attached to **that** job. Two people can
+point two routines at the same public repo (or two forks) and attach
+different files — Claude does not look up a profile from git.
+
 ## Setup (one time, ~10 minutes)
 
 1. Fork this repo or click **Use this template**, then clone **your** copy.
-   Claude Code cloud routines need GitHub. This public repo ships blank
-   `profile.md` / `resume.md` / `apply-facts.md` — fill those in on your
-   copy. If you paste a real resume, make **your** GitHub repo **private**
-   before committing. The daily routine reads `profile.md` from whichever
-   repo you point it at; it does not pick a profile for you.
+   Claude Code cloud routines need GitHub. Your fork can stay **public**:
+   personal markdowns are gitignored. You need the fork so the routine can
+   commit `seen.json` / `digests/` (you cannot push those to someone else's
+   repo).
 2. Local environment:
    ```
    python3 -m venv .venv
@@ -71,29 +102,31 @@ uses 1). Local scoring with Haiku is fractions of a cent.
 5. One-time: connect Slack at claude.ai → Settings → Connectors (a free
    personal workspace with a `#job-scout` channel keeps this separate from
    work). Invite Claude to `#job-scout`.
-6. Paste a current resume into `resume.md` and fill any ATS screening facts
-   in `apply-facts.md`. The apply agent will refuse to draft if `resume.md`
-   is still empty, and will leave screening fields blank rather than invent
-   them. Never put these in `profile.md` (that's the scoring rubric only).
+6. Fill `resume.md` and `apply-facts.md` (copied from `examples/`). The
+   apply agent will refuse to draft if `resume.md` is still empty, and will
+   leave screening fields blank rather than invent them. Never put these in
+   `profile.md` (that's the scoring rubric only).
 7. Point Slack `@Claude` at **your** GitHub copy so apply mentions actually
-   run the Apply runbook (not a generic chat reply):
-   - Preferred: in Claude / Claude Code settings for Slack, attach that
-     repo (or a Claude Project whose instructions are "follow the Apply
-     runbook in README.md"). Then `@Claude apply #3` in the digest thread
-     is enough — numbers, scout ids, and URLs are in the parent message.
+   run the Apply runbook (not a generic chat reply). It also needs your
+   resume: attach `resume.md` / `apply-facts.md` / `profile.md` to that
+   Claude Project, or paste `python -m scout.prompt --apply` into a small
+   apply routine. Then `@Claude apply #3` in the digest thread is enough —
+   numbers, scout ids, and URLs are in the parent message.
    - Fallback if Slack Claude has no repo access: a second Claude Code
-     cloud routine, every few hours, whose prompt is "Read new replies on
-     today's `#job-scout` digest thread. For any `apply …` line, run the
-     Apply runbook in README.md and reply in that thread with the packet."
+     cloud routine, every few hours, whose prompt is the output of
+     `python -m scout.prompt --apply` plus "Read new replies on today's
+     `#job-scout` digest thread. For any `apply …` line, run the Apply
+     runbook and reply in that thread with the packet."
      Pro allows 5 routine runs/day; the morning scout uses 1, so this can
      consume the rest. Same Custom network domains as the daily routine.
 8. Create the daily routine at claude.ai/code/routines → New routine → Cloud:
-   - Repo: **your** GitHub copy (the one with your filled-in `profile.md`)
+   - Repo: **your** GitHub copy (for `seen.json` / `digests/` commits)
    - Schedule: daily, 8:00 AM Central
    - Connector: Slack
-   - Prompt: "Run the daily job-scout pipeline exactly as documented in the
-     Runbook section of README.md. Post to #job-scout as specified there
-     (8+ parent, 6–7 thread reply, or a one-line 'no hits today')."
+   - Prompt: paste the output of `.venv/bin/python -m scout.prompt`
+     (use `--channel other-name` if your Slack channel isn't `#job-scout`).
+     That inlines `profile.md`. Do not point the routine at a repo that
+     contains a real resume.
 
    Requires Claude Code on the web enabled; Pro includes 5 routine runs/day.
 
@@ -122,6 +155,15 @@ uses 1). Local scoring with Haiku is fractions of a cent.
 
 ## Runbook (what the routine executes)
 
+0. Materialize personal inputs. They are not in git. In order:
+   - If this session attached `profile.md` / `resume.md` / `apply-facts.md`,
+     write them into the checkout with those names.
+   - Else write the prompt's `<profile>` block (and `<resume>` /
+     `<apply-facts>` if present) to the same filenames.
+   - Else if `profile.md` already exists on disk, use it.
+   - If `profile.md` is still missing, post to Slack that the routine is
+     missing its profile attachment and stop (commit nothing).
+   Never commit these three files.
 1. `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
 2. `.venv/bin/python -m scout.main --no-score` — fetches and filters, collapses
    same-role multi-city postings to the best city in `city_priority`
@@ -133,12 +175,12 @@ uses 1). Local scoring with Haiku is fractions of a cent.
      empty day — post the error output to Slack and stop (commit nothing).
    - If sources are healthy and it reports 0 candidates, post "no candidates
      today" to Slack and stop (commit nothing).
-3. Read `profile.md` (the rubric) and `candidates.json`. Score each candidate
-   0-10, applying the rubric literally. Cast a wide net: 6+ is worth a look;
-   8+ means apply this week. Building is a plus, not a gate — AI strategy
-   and growth strategy score HIGH even without a build mandate. Do not
-   auto-kill consulting; AI-adjacent work at a firm he'd learn from can
-   score MID or HIGH.
+3. Read `profile.md` (the rubric just materialized) and `candidates.json`.
+   Score each candidate 0-10, applying the rubric literally. Cast a wide
+   net: 6+ is worth a look; 8+ means apply this week. Building is a plus,
+   not a gate — AI strategy and growth strategy score HIGH even without a
+   build mandate. Do not auto-kill consulting; AI-adjacent work at a firm
+   the candidate would learn from can score MID or HIGH.
 4. Write `digest.md` with only candidates scoring >= `score_threshold` in
    `config.yaml`, sorted by score descending, **globally numbered**, in the
    digest format below. Hits at 8+ go under `## Apply this week (8+)`; 6–7
@@ -201,9 +243,10 @@ The scout id (`gh-anthropic-5387827008`, `ab-cursor-…`, `lv-…`, `wd-adobe-�
 `hn-…`) is the stable handle. Company + title is not unique (office clones).
 Omit a section heading when that bucket is empty.
 
-Never edit `config.yaml` or `profile.md`. On any failure before step 6, post
-the error to Slack and commit nothing; a failure in steps 6-7 should still be
-reported to Slack after retrying once.
+Never edit `config.yaml` or the attached `profile.md` / `resume.md` /
+`apply-facts.md`. On any failure before step 6, post the error to Slack and
+commit nothing; a failure in steps 6-7 should still be reported to Slack
+after retrying once.
 
 ## Apply runbook (on `@Claude apply …`)
 
@@ -230,10 +273,11 @@ Steps:
    it is gone after `--mark-seen`) and prints JSON. If the posting is gone,
    say so and stop for that id. If there is no public apply URL, say so
    and stop.
-2. Read `profile.md` (fit + seniority calibration), `resume.md` (work
-   history), and `apply-facts.md` (screening). If `resume.md` has nothing
-   under `## Paste`, refuse and ask the user to paste a resume. Never
-   invent employment, education, or contact details.
+2. Materialize attached inputs the same way as Runbook step 0, then read
+   `profile.md` (fit + seniority calibration), `resume.md` (work history),
+   and `apply-facts.md` (screening). If `resume.md` has nothing under
+   `## Paste`, refuse and ask the user to attach a resume. Never invent
+   employment, education, or contact details.
 3. Write `applications/<YYYY-MM-DD>-<scout-id>.md` in the packet format
    below. Optional: `python -m scout.apply --stub <id>` writes a skeleton
    (header + JD) if the file does not already exist — then fill the prose
@@ -284,9 +328,8 @@ Packet format:
 - **Too quiet** → drop threshold to 5, loosen keywords, grow the watchlist.
 - **Scores feel shallow** → the routine uses your plan's Claude model; for
   local runs, bump `MODEL` in `scout/score.py` to a Sonnet model.
-- **Profile drift** → `profile.md` is the rubric. When your filters change
-  (e.g., a PE process teaches you something new about what you want), edit it —
-  the whole system re-aims instantly.
+- **Profile drift** → edit local `profile.md`, re-run `python -m scout.prompt`,
+  and replace the routine Instructions. The next run re-aims instantly.
 
 ## Extending
 
