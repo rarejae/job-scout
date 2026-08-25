@@ -34,6 +34,16 @@ prefilter_keywords:
   - "growth strategy"
   - "ai strategy"
   - "ai consulting"
+  - "program manager"
+  - "technical program"
+  - tpm
+  - "trust & safety"
+  - "trust and safety"
+  - safeguards
+  - "responsible ai"
+  - "model policy"
+  - "deployment safety"
+  - guardrail
 
 # Hard location filter applied BEFORE scoring. A posting with a non-empty
 # location must match at least one substring (case-insensitive). Empty
@@ -170,3 +180,6 @@ hn_keywords:
   - "applied ai"
   - "ai engineer"
   - "agents"
+  - "trust and safety"
+  - "responsible ai"
+  - "program manager"
