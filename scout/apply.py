@@ -19,6 +19,7 @@ import sys
 import yaml
 
 from . import fetchers
+from .boards import directory_tokens
 from .digest import format_packet, parse_digest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -27,7 +28,21 @@ APPLICATIONS = ROOT / "applications"
 
 def _load_watchlist() -> dict:
     cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
-    return cfg.get("watchlist") or {}
+    wl = dict(cfg.get("watchlist") or {})
+    extra = directory_tokens()
+    merged: dict[str, list] = {}
+    for ats in ("greenhouse", "lever", "ashby"):
+        have: list[str] = []
+        seen: set[str] = set()
+        for t in list(wl.get(ats) or []) + list(extra.get(ats) or []):
+            s = str(t).strip().lower()
+            if s and s not in seen:
+                seen.add(s)
+                have.append(s)
+        merged[ats] = have
+    if wl.get("workday"):
+        merged["workday"] = list(wl["workday"])
+    return merged
 
 
 def _default_digest() -> pathlib.Path:

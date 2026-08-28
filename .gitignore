@@ -6,6 +6,7 @@ __pycache__/
 digest.md
 digest-parent.md
 digest-thread.md
+digest-thread-*.md
 candidates.json
 .DS_Store
 
@@ -13,3 +14,6 @@ candidates.json
 /profile.md
 /resume.md
 /apply-facts.md
+/prompt-daily.md
+/prompt-apply.md
+/amanda/

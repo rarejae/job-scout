@@ -1,11 +1,12 @@
 """Orchestrator. Run: python -m scout.main [--no-score | --mark-seen]
-Fetch watchlist -> freshness/keyword/US-location filters -> dedupe against
-seen.json -> scoring -> write digest.md.
+Role census (title-only G/L/A directory) ∪ watchlist Workday/HN ->
+freshness/keyword/US-location filters -> dedupe against seen.json ->
+scoring -> write digest.md.
 
 Default mode scores with Claude (needs ANTHROPIC_API_KEY). --no-score stops
 after the filters and writes candidates.json so an automation agent can do
 the scoring itself; --mark-seen folds those candidate ids into seen.json
-once scoring has succeeded.
+once scoring has succeeded. --no-census falls back to the watchlist only.
 """
 from __future__ import annotations
 
@@ -18,6 +19,8 @@ import sys
 import yaml
 
 from . import fetchers
+from .boards import DIRECTORY_PATH, census_cfg, census_keywords, lookback_days
+from .census import census_fetch
 from .digest import format_digest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -130,6 +133,19 @@ def collapse_city_duplicates(jobs: list[dict], cfg: dict) -> list[dict]:
     return kept
 
 
+def _flag(name: str) -> bool:
+    return name in sys.argv
+
+
+def _opt_int(name: str) -> int | None:
+    if name not in sys.argv:
+        return None
+    i = sys.argv.index(name)
+    if i + 1 >= len(sys.argv):
+        raise SystemExit(f"{name} needs an integer")
+    return int(sys.argv[i + 1])
+
+
 def mark_seen(max_age_days: int) -> None:
     if not CANDIDATES_PATH.exists():
         print("no candidates.json — nothing to mark")
@@ -148,70 +164,118 @@ def mark_seen(max_age_days: int) -> None:
 
 def main() -> None:
     cfg = yaml.safe_load((ROOT / "config.yaml").read_text())
-    if "--mark-seen" in sys.argv:
-        mark_seen(cfg["max_age_days"])
+    if _flag("--mark-seen"):
+        mark_seen(lookback_days(cfg))
         return
-    no_score = "--no-score" in sys.argv
+    no_score = _flag("--no-score")
+    no_census = _flag("--no-census")
+    census_limit = _opt_int("--census-limit")
 
     seen = load_seen()
+    lookback = lookback_days(cfg)
+    filter_cfg = {**cfg, "max_age_days": lookback}
     kw_patterns = _keyword_patterns(cfg["prefilter_keywords"])
+    census_kw = _keyword_patterns(census_keywords(cfg))
+    cc = census_cfg(cfg)
+    use_census = (
+        bool(cc.get("enabled", True))
+        and DIRECTORY_PATH.exists()
+        and not no_census
+    )
 
     raw: list[dict] = []
     sources_ok = sources_failed = 0
-    fetch_map = {
-        "greenhouse": fetchers.fetch_greenhouse,
-        "lever": fetchers.fetch_lever,
-        "ashby": fetchers.fetch_ashby,
-    }
-    for ats, tokens in (cfg.get("watchlist") or {}).items():
-        if ats == "workday":
-            for url in tokens or []:
+    census_stats: dict = {}
+
+    if use_census:
+        def _keep(job: dict) -> bool:
+            return job["id"] not in seen and passes_prefilter(
+                job, filter_cfg, census_kw)
+
+        kept, census_stats = census_fetch(
+            cfg, _keep, limit=census_limit)
+        raw.extend(kept)
+        sources_ok += census_stats["boards_ok"]
+        sources_failed += census_stats["boards_failed"]
+        print(
+            f"census boards={census_stats['boards']} "
+            f"ok={census_stats['boards_ok']} "
+            f"failed={census_stats['boards_failed']} "
+            f"listed={census_stats['listed']} "
+            f"after_filter={census_stats['after_filter']} "
+            f"hydrate_failed={census_stats['hydrate_failed']} "
+            f"{census_stats['seconds']}s",
+            flush=True,
+        )
+    else:
+        fetch_map = {
+            "greenhouse": fetchers.fetch_greenhouse,
+            "lever": fetchers.fetch_lever,
+            "ashby": fetchers.fetch_ashby,
+        }
+        for ats, tokens in (cfg.get("watchlist") or {}).items():
+            if ats == "workday":
+                continue
+            fn = fetch_map.get(ats)
+            if fn is None:
+                print(f"[warn] unknown ats '{ats}' — skipping", file=sys.stderr)
+                continue
+            for token in tokens or []:
                 try:
-                    raw.extend(fetchers.fetch_workday(
-                        url,
-                        max_age_days=cfg["max_age_days"],
-                        kw_patterns=kw_patterns,
-                    ))
+                    raw.extend(fn(token))
                     sources_ok += 1
                 except Exception as e:
                     sources_failed += 1
-                    print(f"[warn] workday:{url} failed: {e}", file=sys.stderr)
-            continue
-        fn = fetch_map.get(ats)
-        if fn is None:
-            print(f"[warn] unknown ats '{ats}' — skipping", file=sys.stderr)
-            continue
-        for token in tokens or []:
-            try:
-                raw.extend(fn(token))
-                sources_ok += 1
-            except Exception as e:  # one dead token shouldn't kill the run
-                sources_failed += 1
-                print(f"[warn] {ats}:{token} failed: {e}", file=sys.stderr)
+                    print(f"[warn] {ats}:{token} failed: {e}", file=sys.stderr)
+
+    for url in (cfg.get("watchlist") or {}).get("workday") or []:
+        try:
+            raw.extend(fetchers.fetch_workday(
+                url,
+                max_age_days=lookback,
+                kw_patterns=kw_patterns,
+            ))
+            sources_ok += 1
+        except Exception as e:
+            sources_failed += 1
+            print(f"[warn] workday:{url} failed: {e}", file=sys.stderr)
 
     if cfg.get("hn_who_is_hiring"):
         try:
-            raw.extend(fetchers.fetch_hn_who_is_hiring(cfg.get("hn_keywords", []), cfg["max_age_days"]))
+            raw.extend(fetchers.fetch_hn_who_is_hiring(
+                cfg.get("hn_keywords", []), lookback))
             sources_ok += 1
         except Exception as e:
             sources_failed += 1
             print(f"[warn] HN fetch failed: {e}", file=sys.stderr)
 
     fresh: list[dict] = []
-    run_ids: set[str] = set()  # HN comments can match several keywords per run
+    run_ids: set[str] = set()
     for j in raw:
         if j["id"] in seen or j["id"] in run_ids:
             continue
-        if passes_prefilter(j, cfg, kw_patterns):
+        if use_census and not j["id"].startswith(("hn-", "wd-")):
+            # Census already applied freshness/keyword/US filters.
+            fresh.append(j)
+            run_ids.add(j["id"])
+            continue
+        if passes_prefilter(j, filter_cfg, kw_patterns):
             fresh.append(j)
             run_ids.add(j["id"])
     n_before = len(fresh)
     fresh = collapse_city_duplicates(fresh, cfg)
-    print(f"sources_ok={sources_ok} sources_failed={sources_failed} "
+    print(f"lookback_days={lookback} sources_ok={sources_ok} "
+          f"sources_failed={sources_failed} "
           f"fetched={len(raw)} candidates_after_filters={n_before} "
           f"after_city_dedupe={len(fresh)}")
-    if sources_ok == 0:
-        raise SystemExit("all sources failed — outage, not an empty day; nothing written")
+    if use_census:
+        if census_stats.get("boards_ok", 0) < 50:
+            raise SystemExit(
+                "census outage: fewer than 50 boards answered; "
+                "nothing written")
+    elif sources_ok == 0:
+        raise SystemExit(
+            "all sources failed — outage, not an empty day; nothing written")
 
     if no_score:
         CANDIDATES_PATH.write_text(json.dumps(fresh, indent=2))
@@ -233,7 +297,7 @@ def main() -> None:
         if result["score"] >= cfg["score_threshold"]:
             hits.append((result, job))
 
-    save_seen(seen, cfg["max_age_days"])
+    save_seen(seen, lookback)
 
     if not hits:
         DIGEST_PATH.write_text("")  # empty file = Action skips issue creation

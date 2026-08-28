@@ -4,7 +4,7 @@ Claude Code routines have no separate file-picker. The saved Instructions
 *are* the attachment surface: this command embeds your gitignored markdowns
 so the cloud run has them without committing PII to GitHub.
 
-  python -m scout.prompt                         # daily digest
+  python -m scout.prompt                         # scout digest
   python -m scout.prompt --apply                 # @Claude apply helper
   python -m scout.prompt --channel job-scout-mkt
 """
@@ -16,8 +16,9 @@ import sys
 from .inputs import APPLY_FACTS, PROFILE, RESUME, load_text
 
 DAILY = """\
-Run the daily job-scout pipeline exactly as documented in the Runbook
-section of README.md.
+Run the job-scout pipeline exactly as documented in the Runbook
+section of README.md. This job runs twice daily; follow the runbook for
+*this* run, not "today" as a whole.
 
 Personal inputs are attached to this prompt, not committed to git. Before
 step 1 of the runbook, materialize them into the checkout:
@@ -26,7 +27,9 @@ step 1 of the runbook, materialize them into the checkout:
 These three files are gitignored — never commit them.
 
 Post to #{channel} as specified in the runbook (8+ parent, 6–7 thread
-reply, or a one-line "no hits today").
+reply, or a one-line "no hits this run"). Archive digest.md to
+digests/<YYYY-MM-DD>-<HHMM>.md so a later run the same day does not
+overwrite it.
 
 <profile>
 {profile}
@@ -70,7 +73,7 @@ def main() -> None:
     p.add_argument(
         "--channel",
         default="job-scout",
-        help="Slack channel name without # (daily prompt only)",
+        help="Slack channel name without # (scout prompt only)",
     )
     args = p.parse_args()
     channel = args.channel.lstrip("#")

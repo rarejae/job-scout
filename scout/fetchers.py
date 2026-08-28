@@ -10,6 +10,12 @@ import requests
 
 UA = {"User-Agent": "job-scout/1.0 (personal job search tool)"}
 TIMEOUT = 20
+# Ashby and Lever posting ids are UUIDs; Greenhouse job ids are numeric.
+_UUID_TAIL = re.compile(
+    r"^(?P<token>.+)-(?P<id>"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$",
+    re.I,
+)
 
 
 def _clean(text: str, limit: int = 1500) -> str:
@@ -70,25 +76,41 @@ def _ashby_job(token: str, j: dict, description_limit: int = 1500) -> dict:
     }
 
 
-def fetch_greenhouse(token: str) -> list[dict]:
-    url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs?content=true"
-    r = requests.get(url, headers=UA, timeout=TIMEOUT)
+def _get(url: str, session: requests.Session | None = None,
+         timeout: int = TIMEOUT) -> requests.Response:
+    if session is None:
+        r = requests.get(url, headers=UA, timeout=timeout)
+    else:
+        r = session.get(url, timeout=timeout)
     r.raise_for_status()
+    return r
+
+
+def fetch_greenhouse(token: str, *, content: bool = True,
+                     session: requests.Session | None = None,
+                     timeout: int = TIMEOUT) -> list[dict]:
+    q = "?content=true" if content else ""
+    url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs{q}"
+    r = _get(url, session=session, timeout=timeout)
     return [_greenhouse_job(token, j) for j in r.json().get("jobs", [])]
 
 
-def fetch_lever(token: str) -> list[dict]:
+def fetch_lever(token: str, *, session: requests.Session | None = None,
+                timeout: int = TIMEOUT, description_limit: int = 1500
+                ) -> list[dict]:
     url = f"https://api.lever.co/v0/postings/{token}?mode=json"
-    r = requests.get(url, headers=UA, timeout=TIMEOUT)
-    r.raise_for_status()
-    return [_lever_job(token, j) for j in r.json()]
+    r = _get(url, session=session, timeout=timeout)
+    return [_lever_job(token, j, description_limit=description_limit)
+            for j in r.json()]
 
 
-def fetch_ashby(token: str) -> list[dict]:
-    url = f"https://api.ashbyhq.com/posting-api/job-board/{token}?includeCompensation=true"
-    r = requests.get(url, headers=UA, timeout=TIMEOUT)
-    r.raise_for_status()
-    return [_ashby_job(token, j) for j in r.json().get("jobs", [])]
+def fetch_ashby(token: str, *, session: requests.Session | None = None,
+                timeout: int = TIMEOUT, description_limit: int = 1500
+                ) -> list[dict]:
+    url = f"https://api.ashbyhq.com/posting-api/job-board/{token}"
+    r = _get(url, session=session, timeout=timeout)
+    return [_ashby_job(token, j, description_limit=description_limit)
+            for j in r.json().get("jobs", [])]
 
 
 def fetch_hn_who_is_hiring(keywords: list[str], max_age_days: int) -> list[dict]:
@@ -341,36 +363,37 @@ def parse_scout_id(scout_id: str, watchlist: dict | None = None) -> tuple[str, s
             return (ats, token, "")
         if rest.startswith(token + "-"):
             return (ats, token, rest[len(token) + 1:])
-    # Greenhouse job ids are numeric — split from the right if the token
-    # isn't in this checkout's watchlist (stale digest, renamed slug).
+    # Token not in this checkout's watchlist (census hit, stale digest).
     if ats == "greenhouse" and "-" in rest:
         token, native = rest.rsplit("-", 1)
         if native.isdigit():
             return (ats, token, native)
+    if ats in ("ashby", "lever"):
+        m = _UUID_TAIL.match(rest)
+        if m:
+            return (ats, m.group("token"), m.group("id"))
     raise ValueError(f"cannot parse token from scout id: {scout_id}")
 
 
 def fetch_one(scout_id: str, watchlist: dict | None = None,
-              description_limit: int = 8000) -> dict:
+              description_limit: int = 8000,
+              session: requests.Session | None = None,
+              timeout: int = TIMEOUT) -> dict:
     """Re-fetch a single posting by scout id. Raises if the req is gone."""
     ats, token, native = parse_scout_id(scout_id, watchlist)
     if not native:
         raise ValueError(f"scout id missing native job id: {scout_id}")
     if ats == "greenhouse":
         url = f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs/{native}"
-        r = requests.get(url, headers=UA, timeout=TIMEOUT)
-        r.raise_for_status()
+        r = _get(url, session=session, timeout=timeout)
         return _greenhouse_job(token, r.json(), description_limit=description_limit)
     if ats == "lever":
         url = f"https://api.lever.co/v0/postings/{token}/{native}"
-        r = requests.get(url, headers=UA, timeout=TIMEOUT)
-        r.raise_for_status()
+        r = _get(url, session=session, timeout=timeout)
         return _lever_job(token, r.json(), description_limit=description_limit)
     if ats == "ashby":
-        url = (f"https://api.ashbyhq.com/posting-api/job-board/{token}"
-               "?includeCompensation=true")
-        r = requests.get(url, headers=UA, timeout=TIMEOUT)
-        r.raise_for_status()
+        url = f"https://api.ashbyhq.com/posting-api/job-board/{token}"
+        r = _get(url, session=session, timeout=timeout)
         for j in r.json().get("jobs", []):
             if str(j.get("id")) == native:
                 return _ashby_job(token, j, description_limit=description_limit)

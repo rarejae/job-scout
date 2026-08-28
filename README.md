@@ -1,22 +1,22 @@
 # job-scout
 
-Agentic job-opportunity screener. Every morning a scheduled Claude routine
-pulls fresh postings (< 7 days old) straight from company ATS endpoints — the
-source underneath career pages, hours-to-days before postings hit aggregators —
-scores each against a personal fit profile, and posts a ranked digest to
-Slack. Reply in that thread with `@Claude apply #3` to get a paste-ready
+Agentic job-opportunity screener. Twice a day a scheduled Claude routine
+censuses ~7k public Greenhouse / Lever / Ashby boards for roles posted in
+the last **2 days**, plus any Workday URLs and HN Who's Hiring, scores each
+hit against a personal fit profile, and posts a ranked digest to Slack.
+Reply in that thread with `@Claude apply #3` to get a paste-ready
 application packet; you submit the ATS form yourself. No hits, no noise.
 
 ## How it works
 
 ```
-config.yaml watchlist
+data/ats-boards.json  (~7k G/L/A boards)  ∪  watchlist (Workday / extras)
         │
         ▼
-ATS fetchers (Greenhouse / Lever / Ashby / Workday CXS) + HN Who's Hiring
+title-only census → freshness (<2d) → keyword prefilter → US location
         │
         ▼
-freshness (<7d) → keyword prefilter → US location filter → seen.json dedupe
+detail-fetch survivors → seen.json dedupe → city collapse
         │
         ▼
 Scorer (rubric = attached profile.md): the routine's Claude agent scores
@@ -34,9 +34,13 @@ seen.json + digests/ + applications/ committed back to the repo
 (profile.md / resume.md / apply-facts.md stay out of git)
 ```
 
-Cost: prefiltering keeps scored postings to a few dozen per run. The routine
-draws from a normal Claude subscription (Pro allows 5 routine runs/day; this
-uses 1). Local scoring with Haiku is fractions of a cent.
+The aperture is **role queries** (`prefilter_keywords`), not a company list.
+The watchlist is a priority overlay (Workday URLs, plus any G/L/A slug missing
+from the directory). Refresh the directory with `python -m scout.boards --refresh`.
+
+Cost: the census is title-only; only keyword hits get a JD and a score. The
+routine draws from a normal Claude subscription (Pro allows 5 routine runs/day;
+this uses 2). Local scoring with Haiku is fractions of a cent.
 
 ## Personal inputs (not in git)
 
@@ -44,7 +48,7 @@ Three markdowns are **yours**, not the repo. They never get committed:
 
 | File | Role |
 |------|------|
-| `profile.md` | Scoring rubric for the daily digest |
+| `profile.md` | Scoring rubric for each digest |
 | `resume.md` | Work history for apply packets |
 | `apply-facts.md` | ATS screening facts for apply packets |
 
@@ -57,7 +61,7 @@ with them already inlined.
 cp examples/profile.md profile.md       # then fill it in
 cp examples/resume.md resume.md
 cp examples/apply-facts.md apply-facts.md
-.venv/bin/python -m scout.prompt          # daily job → stdout
+.venv/bin/python -m scout.prompt          # scout job → stdout
 .venv/bin/python -m scout.prompt --apply  # apply job → stdout
 ```
 
@@ -92,13 +96,15 @@ different files — Claude does not look up a profile from git.
    A Workday hit prints the careers URL to paste under `watchlist.workday`
    (you add that key; the agent does not edit `config.yaml`).
 4. Test the pipeline (no key needed — stops after filtering and writes
-   `candidates.json`):
+   `candidates.json`). A short census:
+   ```
+   .venv/bin/python -m scout.main --no-score --census-limit 80
+   ```
+   Full census (~7k boards, a few minutes):
    ```
    .venv/bin/python -m scout.main --no-score
    ```
-   To test scoring locally too, install `requirements-score.txt`, get a key
-   from console.anthropic.com, and run
-   `ANTHROPIC_API_KEY=sk-... .venv/bin/python -m scout.main`.
+   Watchlist-only (no directory sweep): `--no-census`.
 5. One-time: connect Slack at claude.ai → Settings → Connectors (a free
    personal workspace with a `#job-scout` channel keeps this separate from
    work). Invite Claude to `#job-scout`.
@@ -117,11 +123,14 @@ different files — Claude does not look up a profile from git.
      `python -m scout.prompt --apply` plus "Read new replies on today's
      `#job-scout` digest thread. For any `apply …` line, run the Apply
      runbook and reply in that thread with the packet."
-     Pro allows 5 routine runs/day; the morning scout uses 1, so this can
-     consume the rest. Same Custom network domains as the daily routine.
-8. Create the daily routine at claude.ai/code/routines → New routine → Cloud:
+     Pro allows 5 routine runs/day; the scout uses 2, so this can
+     consume the rest. Same Custom network domains as the scout routine.
+8. Create the scout routine at claude.ai/code/routines → New routine → Cloud:
    - Repo: **your** GitHub copy (for `seen.json` / `digests/` commits)
-   - Schedule: daily, 8:00 AM Central
+   - Schedule: **twice daily, 8:00 AM and 8:00 PM Central**. If the editor
+     only accepts one time, make two routines with the same prompt. A 12-hour
+     cadence plus a 2-day lookback means one missed run still catches the req
+     (max delay ~2 days after `first_published`).
    - Connector: Slack
    - Prompt: paste the output of `.venv/bin/python -m scout.prompt`
      (use `--channel other-name` if your Slack channel isn't `#job-scout`).
@@ -165,16 +174,18 @@ different files — Claude does not look up a profile from git.
      missing its profile attachment and stop (commit nothing).
    Never commit these three files.
 1. `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt`
-2. `.venv/bin/python -m scout.main --no-score` — fetches and filters, collapses
+2. `.venv/bin/python -m scout.main --no-score` — censuses the G/L/A directory
+   (title-only, 2-day lookback) plus watchlist Workday/HN, collapses
    same-role multi-city postings to the best city in `city_priority`
    (Chicago → NYC → Atlanta → SF → other US), writes `candidates.json`.
    Dropped city clones are on each winner as `collapsed_ids` / `also_locations`
    — `--mark-seen` still records them. Read the summary line
-   (`sources_ok=… sources_failed=…`):
-   - If it exits nonzero or most sources failed, that's an outage, not an
-     empty day — post the error output to Slack and stop (commit nothing).
+   (`lookback_days=… census … sources_ok=…`):
+   - If it exits nonzero (`census outage` or most sources failed), that's an
+     outage, not an empty run — post the error output to Slack and stop
+     (commit nothing).
    - If sources are healthy and it reports 0 candidates, post "no candidates
-     today" to Slack and stop (commit nothing).
+     this run" to Slack and stop (commit nothing).
 3. Read `profile.md` (the rubric just materialized) and `candidates.json`.
    Score each candidate 0-10, applying the rubric literally. Cast a wide
    net: 6+ is worth a look; 8+ means apply this week. Building is a plus,
@@ -186,8 +197,9 @@ different files — Claude does not look up a profile from git.
    digest format below. Hits at 8+ go under `## Apply this week (8+)`; 6–7
    go under `## Also looking (6–7)`. Numbering is continuous across both
    sections so `#3` is unique. If there are hits, also copy the **full**
-   `digest.md` (both sections) to `digests/<YYYY-MM-DD>.md` (a committed
-   archive — nothing is lost if delivery fails, and history helps tuning).
+   `digest.md` (both sections) to `digests/<YYYY-MM-DD>-<HHMM>.md` (a committed
+   per-run archive — twice-daily runs must not overwrite each other). Apply
+   `#N` against that run's file, or the latest `digests/<date>-*.md`.
 5. Post to `#job-scout` on Slack **before** committing seen state. Split so
    Slack stays inside its size limit (a 90-hit blob can truncate, which
    breaks `#N`):
@@ -195,20 +207,26 @@ different files — Claude does not look up a profile from git.
    .venv/bin/python -m scout.digest
    ```
    writes gitignored `digest-parent.md` (8+ plus header/footer) and, when
-   needed, `digest-thread.md` (6–7, same global numbers). Then:
+   needed, `digest-thread.md`, `digest-thread-2.md`, … (6–7 and any overflow,
+   same global numbers, each under Slack's ~5k-char cap). Then:
    - Parent message: the contents of `digest-parent.md`.
-   - Thread reply, if `digest-thread.md` was written: post it as a reply
-     on that parent.
+   - Thread replies, in order: each `digest-thread*.md` as a reply on that
+     parent (not as new channel messages).
    - If nothing scored 8+, `digest-parent.md` is the 6–7 section (never an
      empty parent).
    - If nothing cleared the threshold, post "no hits this run".
    If delivery fails, stop here so today's candidates resurface next run.
-6. `.venv/bin/python -m scout.main --mark-seen` — folds today's candidates
+6. `.venv/bin/python -m scout.main --mark-seen` — folds this run's candidates
    into `seen.json` so they're never re-scored. Does not affect apply
    packets; apply is a separate queue.
-7. `git pull --rebase`, then commit `seen.json` (and `digests/` if written)
-   to `main` ("scout: update seen state") and push. If the rebase conflicts
-   on `seen.json`, resolve by unioning the entries of both versions (it's a
+7. `git pull --rebase` against **`main`**, then commit `seen.json` (and
+   `digests/` if written) **on `main`** ("scout: update seen state") and
+   push `main`. The next run clones the default branch — a commit left on
+   the session `claude/…` branch will not be seen, and the same candidates
+   will be scored again. If this session started on a `claude/` branch,
+   checkout `main`, merge the seen-state commit, and push `main`. Do not
+   finish with an unmerged `claude/` branch. If the rebase conflicts on
+   `seen.json`, resolve by unioning the entries of both versions (it's a
    flat `{id: date}` object; on a duplicate id keep the earlier date).
 
 Digest format:
@@ -263,11 +281,12 @@ Trigger examples (reply in the digest thread):
 
 Steps:
 
-1. Resolve to scout ids. `#N` → that day's `digests/<YYYY-MM-DD>.md` (or
-   the parent Slack message / working `digest.md`). Fuzzy title → if more
-   than one match, **ask which id**, do not guess.
+1. Resolve to scout ids. `#N` → that run's `digests/<YYYY-MM-DD>-<HHMM>.md`
+   (latest file that day if unspecified) or the parent Slack message /
+   working `digest.md`. Fuzzy title → if more than one match, **ask which id**,
+   do not guess.
    ```
-   .venv/bin/python -m scout.apply --digest digests/<YYYY-MM-DD>.md 3 7
+   .venv/bin/python -m scout.apply --digest digests/<YYYY-MM-DD>-<HHMM>.md 3 7
    ```
    That re-fetches the JD from the ATS (do not rely on `candidates.json`;
    it is gone after `--mark-seen`) and prints JSON. If the posting is gone,
@@ -325,25 +344,31 @@ Packet format:
 ## Tuning
 
 - **Too noisy** → raise `score_threshold` to 7 or 8, tighten `prefilter_keywords`.
-- **Too quiet** → drop threshold to 5, loosen keywords, grow the watchlist.
+- **Too quiet** → drop threshold to 5, loosen keywords. Growing the watchlist
+  only helps Workday / missing directory slugs — the census already covers
+  ~7k Greenhouse/Ashby boards.
 - **Scores feel shallow** → the routine uses your plan's Claude model; for
   local runs, bump `MODEL` in `scout/score.py` to a Sonnet model.
 - **Profile drift** → edit local `profile.md`, re-run `python -m scout.prompt`,
   and replace the routine Instructions. The next run re-aims instantly.
+- **Stale directory** → `python -m scout.boards --refresh` and commit
+  `data/ats-boards.json`.
 
 ## Extending
 
-- **More companies** is the highest-leverage change. The watchlist is the
-  system's aperture. Weekly habit: notice an interesting company → run
-  `discover.py` → add the token (or, for Workday, the careers URL).
+- **Role queries** are the aperture (`prefilter_keywords`). The census drops
+  the tokens `data` and `platform` (too broad across 7k boards) unless you
+  set `census.keywords` in `config.yaml`. Greenhouse list matches **title**
+  only; Lever/Ashby include department. Watchlist Workday/HN still use the
+  full keyword list.
 - **Workday** — no public slug API. Paste a `*.myworkdayjobs.com` careers
   (or job) URL into `watchlist.workday`. `discover.py <url>` confirms it.
   The poller POSTs the CXS list at 20 rows, drops stale/non-keyword titles,
   then GETs detail only for survivors — same job dict as Greenhouse. Do not
   start with giant boards (NVIDIA-scale); pick companies you actually want.
-  Exa is not in the daily pipeline (search index, not a complete board dump).
-- **PE-specific boards** (no public APIs) — add a fetcher that scrapes and
-  diffs; the pipeline only needs the same dict shape back. (Palantir's bespoke
-  careers portal is the standing example.)
+  Exa is not in the pipeline (search index, not a complete board dump).
+- **PE-specific / closed APIs** — EvenUp's Ashby page exists but the public
+  posting API 404s. Add a fetcher that scrapes and diffs; the pipeline only
+  needs the same dict shape back.
 - **Apply packets** are on-demand via the Apply runbook, not auto-sent.
   Browser auto-fill / ATS submit is deliberately out of scope.

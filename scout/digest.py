@@ -1,6 +1,7 @@
 """Digest markdown: numbered, id-tagged cards the apply runbook can resolve."""
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 APPLY_WEEK_MIN = 8
@@ -20,6 +21,14 @@ _CARD_RE = re.compile(
 _DATE_RE = re.compile(r"^# Job Scout — (\d{4}-\d{2}-\d{2})", re.M)
 _ALSO_LOOKING = "## Also looking (6–7)"
 _APPLY_WEEK = "## Apply this week (8+)"
+# Slack connector truncates around 5k; stay under so `#N` never gets cut mid-card.
+SLACK_CHAR_LIMIT = 4800
+
+
+def archive_relpath(when: dt.datetime | None = None) -> str:
+    """Per-run archive name so a twice-daily cadence does not overwrite."""
+    when = when or dt.datetime.now()
+    return f"digests/{when:%Y-%m-%d-%H%M}.md"
 
 
 def format_card(n: int, result: dict, job: dict) -> list[str]:
@@ -83,25 +92,85 @@ def parse_digest(text: str) -> dict:
     return {"date": date_m.group(1) if date_m else None, "cards": cards}
 
 
-def split_for_slack(text: str) -> tuple[str, str | None]:
-    """Parent message (8+ if any) and optional 'also looking' thread body.
+def _extract_cards(section: str) -> list[str]:
+    return [p for p in re.split(r"(?=^### )", section, flags=re.M) if p.startswith("###")]
 
-    If nothing scored 8+, the 6–7 section is the parent so Slack is never empty.
+
+def _split_sections(text: str) -> tuple[str, list[str], list[str]]:
+    """Preamble (title/counts/footer), 8+ cards, 6–7 cards."""
+    if _APPLY_WEEK in text:
+        top, rest = text.split(_APPLY_WEEK, 1)
+        if _ALSO_LOOKING in rest:
+            high_part, mid_part = rest.split(_ALSO_LOOKING, 1)
+            return top, _extract_cards(high_part), _extract_cards(mid_part)
+        return top, _extract_cards(rest), []
+    if _ALSO_LOOKING in text:
+        top, mid_part = text.split(_ALSO_LOOKING, 1)
+        return top, [], _extract_cards(mid_part)
+    return text, _extract_cards(text), []
+
+
+def _fill(header: str, cards: list[str], limit: int) -> tuple[str, list[str]]:
+    """One Slack message and the cards that did not fit. Never splits a card."""
+    buf = header
+    for i, card in enumerate(cards):
+        candidate = buf + card
+        if i > 0 and len(candidate) > limit:
+            return buf.rstrip() + "\n", cards[i:]
+        buf = candidate
+    return buf.rstrip() + "\n", []
+
+
+def split_for_slack(
+    text: str, limit: int = SLACK_CHAR_LIMIT,
+) -> tuple[str, list[str]]:
+    """Parent message plus zero or more thread replies, each within `limit`.
+
+    8+ stays in the parent when it fits. Overflow 8+ cards and the 6–7
+    section become thread replies, split on card boundaries. If nothing
+    scored 8+, the 6–7 section is the parent so Slack is never empty.
     """
-    if _ALSO_LOOKING not in text:
-        return text.rstrip() + "\n", None
-    pre, mid = text.split(_ALSO_LOOKING, 1)
-    if _APPLY_WEEK in pre:
-        parent = pre.rstrip() + "\n"
-        date_m = _DATE_RE.search(text)
-        date = date_m.group(1) if date_m else ""
-        thread = (
-            f"# Job Scout — {date} (also looking 6–7)\n\n"
-            f"{APPLY_FOOTER}\n\n"
-            f"{_ALSO_LOOKING}{mid}"
+    date_m = _DATE_RE.search(text)
+    date = date_m.group(1) if date_m else ""
+    top, high, mid = _split_sections(text)
+    top = top.rstrip() + "\n\n"
+
+    threads: list[str] = []
+    if high:
+        parent, rest_high = _fill(top + _APPLY_WEEK + "\n\n", high, limit)
+        cont = (
+            f"# Job Scout — {date} (apply this week continued)\n\n"
+            f"{APPLY_FOOTER}\n\n{_APPLY_WEEK}\n\n"
         )
-        return parent, thread
-    return text.rstrip() + "\n", None
+        while rest_high:
+            part, rest_high = _fill(cont, rest_high, limit)
+            threads.append(part)
+        looking_header = (
+            f"# Job Scout — {date} (also looking 6–7)\n\n"
+            f"{APPLY_FOOTER}\n\n{_ALSO_LOOKING}\n\n"
+        )
+        looking_cont = (
+            f"# Job Scout — {date} (also looking 6–7 continued)\n\n"
+            f"{APPLY_FOOTER}\n\n{_ALSO_LOOKING}\n\n"
+        )
+        rest_mid = mid
+        first = True
+        while rest_mid:
+            hdr = looking_header if first else looking_cont
+            part, rest_mid = _fill(hdr, rest_mid, limit)
+            threads.append(part)
+            first = False
+        return parent, threads
+
+    parent, rest_mid = _fill(top + _ALSO_LOOKING + "\n\n", mid, limit) if mid else (top, [])
+    looking_cont = (
+        f"# Job Scout — {date} (also looking 6–7 continued)\n\n"
+        f"{APPLY_FOOTER}\n\n{_ALSO_LOOKING}\n\n"
+    )
+    while rest_mid:
+        part, rest_mid = _fill(looking_cont, rest_mid, limit)
+        threads.append(part)
+    return parent, threads
 
 
 def format_packet(
@@ -159,13 +228,19 @@ if __name__ == "__main__":
     import sys
 
     src = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "digest.md")
-    parent, thread = split_for_slack(src.read_text())
+    parent, threads = split_for_slack(src.read_text())
     parent_out = src.with_name("digest-parent.md")
-    thread_out = src.with_name("digest-thread.md")
     parent_out.write_text(parent)
-    if thread:
-        thread_out.write_text(thread)
-        print(f"wrote {parent_out} and {thread_out}")
+    for old in src.parent.glob("digest-thread*.md"):
+        old.unlink()
+    if not threads:
+        print(f"wrote {parent_out} (no thread)")
     else:
-        thread_out.unlink(missing_ok=True)
-        print(f"wrote {parent_out} (no 6–7 thread)")
+        written = []
+        for i, body in enumerate(threads, 1):
+            name = "digest-thread.md" if i == 1 else f"digest-thread-{i}.md"
+            path = src.with_name(name)
+            path.write_text(body)
+            written.append(f"{path.name} ({len(body)} chars)")
+        print(f"wrote {parent_out} ({len(parent)} chars) and "
+              f"{len(threads)} thread file(s): {', '.join(written)}")
